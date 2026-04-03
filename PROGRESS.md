@@ -1,0 +1,90 @@
+# OpsComm Pipeline — Progress Tracker
+
+## Phase 0 — MVP
+
+### Completed (2026-04-03)
+
+- [x] **SFTP connection tested** — paramiko connects to SFTP server successfully
+- [x] **SFTP folder structure explored** — full tree snapshot saved at depth 2 and 3
+- [x] **Folder naming patterns validated** — confirmed real naming vs documented assumptions
+  - V8.1: mixed `v` prefix (early) and no prefix (later), dots as separators
+  - V8.0: underscore separators, version folders are `8_0_{minor}` (not `ACARS_V8_0_{minor}`)
+  - V7.3: flat structure confirmed for tracked range, underscore separators, no prefix
+- [x] **Product IDs unified** — all three products use `ACARS_V{major}_{minor}` format
+- [x] **Tracking cutoffs defined**
+  - ACARS_V8_1: track ALL patches
+  - ACARS_V8_0: track from `8_0_28` onwards
+  - ACARS_V7_3: track from `7_3_27_0` onwards
+- [x] **Version normalization implemented** — all folder names normalize to dotted format (e.g., `7_3_27_7` -> `7.3.27.7`, `v8.1.9.1` -> `8.1.9.1`)
+- [x] **Hierarchical tracker structure** — even V7.3 (flat on SFTP) stores as `version/patch` (e.g., `7.3.27/7.3.27.7`)
+- [x] **Per-product tracker JSONs** — `state/patches/{PRODUCT_ID}.json` created and validated
+- [x] **Idempotent scanning** — re-running the scan detects no new patches (only adds new ones)
+- [x] **Pipeline dry run** — scan -> download simulation -> approval gate working end-to-end
+- [x] **Config files updated**
+  - `config/pipeline.json` — products, lifecycle, Jira fields, portal settings (merged from pipeline_flow.json)
+- [x] **Python venv** — set up with paramiko + python-dotenv
+- [x] **.gitignore** — created to protect .env, venv, snapshots
+
+### Current patch counts (from first scan)
+
+| Product | Versions | Patches | Status |
+|---------|----------|---------|--------|
+| ACARS V8.1 | 12 | 24 | All pending_approval |
+| ACARS V8.0 | 3 | 5 | All pending_approval |
+| ACARS V7.3 | 1 | 5 | All pending_approval |
+| **Total** | **16** | **34** | |
+
+### Completed — Jira Integration (2026-04-03)
+
+- [x] **Jira API token created** — classic token (no scopes), Basic Auth confirmed working
+- [x] **Project key confirmed** — `CFSSOCP` (CFS-ServiceOps-CommPortal, id=10008)
+  - Originally documented as CFSSOCF — corrected to CFSSOCP
+- [x] **Issue type identified** — "Release notes, documents & binaries" (id=10163)
+- [x] **All required fields mapped** — 10 required fields with confirmed IDs and values:
+  - Client (`customfield_10328`): Flightscape
+  - Environment (`customfield_10538`): All the three
+  - Product Name (`customfield_10562`): CAE® Operations Communication Manager
+  - Release Name (`customfield_10563`): Version {major.minor.patch}
+  - Release Type (`customfield_10616`): Version
+  - Release Approval (`customfield_10617`): Users should not request approval...
+  - Create/Update/Remove (`customfield_10618`): New/Existing CAE Portal Release
+- [x] **Description template defined** — with new/existing folder logic
+- [x] **Attachment workflow documented** — zip + POST after ticket creation
+- [x] **Dry-run script created** — `scripts/test_jira.py` validates full payload
+- [x] **`requests` library installed** in venv
+- [x] **Scoped tokens tested and ruled out** — only classic tokens work for this instance
+
+### Completed — Jira Ticket Validation (2026-04-03, Session 2)
+
+- [x] **Real test ticket created** — CFSSOCP-6590 for patch 8.1.11.0, all fields accepted
+- [x] **Attachment upload confirmed** — test zip uploaded successfully
+- [x] **Search API migration** — old `/rest/api/3/search` removed (HTTP 410), new endpoint: `POST /rest/api/3/search/jql`
+- [x] **New/existing folder JQL corrected** — search by Release Name field (`cf[10563]`), not summary
+- [x] **`scripts/create_jira_ticket.py` created** — takes `--patch-id`, creates ticket, uploads test attachment
+- [x] **Existing ticket inspected** — CFSSOCP-5824 fields compared with our new format, decided to keep new format
+- [x] **Delete via API tested** — 403, must delete manually from board
+
+### Not started
+
+- [ ] FastAPI backend (endpoints, state manager, SFTP integration module)
+- [ ] Real SFTP download (currently simulated with print)
+- [ ] Next.js frontend (dashboard, patch list, approve/publish buttons)
+- [ ] Docker Compose setup
+- [ ] Docs pipeline (stubbed — no DOC/ folders in tracked range)
+
+---
+
+## Key files
+
+| File | Purpose |
+|------|---------|
+| `.env` | SFTP credentials (not committed) |
+| `config/pipeline.json` | Products, lifecycle, Jira fields, portal settings |
+| `state/patches/ACARS_V8_1.json` | V8.1 tracker (24 patches) |
+| `state/patches/ACARS_V8_0.json` | V8.0 tracker (5 patches) |
+| `state/patches/ACARS_V7_3.json` | V7.3 tracker (5 patches) |
+| `scripts/test_sftp.py` | SFTP dry run script (scan + simulate) |
+| `scripts/test_jira.py` | Jira connection dry run (auth + fields + payload) |
+| `scripts/create_jira_ticket.py` | Creates real Jira ticket + attachment for a patch ID |
+| `scripts/sftp_snapshot_MAX_DEPTH2.txt` | Full SFTP tree snapshot |
+| `HANDOFF_JIRA_INTEGRATION.md` | Jira integration handoff document |

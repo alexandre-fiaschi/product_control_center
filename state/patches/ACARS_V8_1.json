@@ -1,0 +1,257 @@
+{
+  "product_id": "ACARS_V8_1",
+  "last_scanned_at": "2026-04-03T17:04:35.873201+00:00",
+  "versions": {
+    "8.1.0": {
+      "patches": {
+        "8.1.0.0": {
+          "sftp_folder": "v8.1.0.0",
+          "sftp_path": "/ACARS_V8_1/ACARS_V8_1_0/v8.1.0.0",
+          "status": "pending_approval",
+          "discovered_at": "2026-04-03T17:01:11.127980+00:00",
+          "downloaded_at": "2026-04-03T17:01:12.668255+00:00",
+          "approved_at": null,
+          "published_at": null
+        },
+        "8.1.0.1": {
+          "sftp_folder": "v8.1.0.1",
+          "sftp_path": "/ACARS_V8_1/ACARS_V8_1_0/v8.1.0.1",
+          "status": "pending_approval",
+          "discovered_at": "2026-04-03T17:01:11.127980+00:00",
+          "downloaded_at": "2026-04-03T17:01:12.668255+00:00",
+          "approved_at": null,
+          "published_at": null
+        },
+        "8.1.0.2": {
+          "sftp_folder": "v8.1.0.2",
+          "sftp_path": "/ACARS_V8_1/ACARS_V8_1_0/v8.1.0.2",
+          "status": "pending_approval",
+          "discovered_at": "2026-04-03T17:01:11.127980+00:00",
+          "downloaded_at": "2026-04-03T17:01:12.668255+00:00",
+          "approved_at": null,
+          "published_at": null
+        },
+        "8.1.0.3": {
+          "sftp_folder": "v8.1.0.3",
+          "sftp_path": "/ACARS_V8_1/ACARS_V8_1_0/v8.1.0.3",
+          "status": "pending_approval",
+          "discovered_at": "2026-04-03T17:01:11.127980+00:00",
+          "downloaded_at": "2026-04-03T17:01:12.668255+00:00",
+          "approved_at": null,
+          "published_at": null
+        }
+      }
+    },
+    "8.1.1": {
+      "patches": {
+        "8.1.1.0": {
+          "sftp_folder": "v8.1.1.0",
+          "sftp_path": "/ACARS_V8_1/ACARS_V8_1_1/v8.1.1.0",
+          "status": "pending_approval",
+          "discovered_at": "2026-04-03T17:01:11.127980+00:00",
+          "downloaded_at": "2026-04-03T17:01:12.668255+00:00",
+          "approved_at": null,
+          "published_at": null
+        }
+      }
+    },
+    "8.1.10": {
+      "patches": {
+        "8.1.10.0": {
+          "sftp_folder": "8.1.10.0",
+          "sftp_path": "/ACARS_V8_1/ACARS_V8_1_10/8.1.10.0",
+          "status": "pending_approval",
+          "discovered_at": "2026-04-03T17:01:11.127980+00:00",
+          "downloaded_at": "2026-04-03T17:01:12.668255+00:00",
+          "approved_at": null,
+          "published_at": null
+        },
+        "8.1.10.1": {
+          "sftp_folder": "8.1.10.1",
+          "sftp_path": "/ACARS_V8_1/ACARS_V8_1_10/8.1.10.1",
+          "status": "pending_approval",
+          "discovered_at": "2026-04-03T17:01:11.127980+00:00",
+          "downloaded_at": "2026-04-03T17:01:12.668255+00:00",
+          "approved_at": null,
+          "published_at": null
+        }
+      }
+    },
+    "8.1.11": {
+      "patches": {
+        "8.1.11.0": {
+          "sftp_folder": "8.1.11.0",
+          "sftp_path": "/ACARS_V8_1/ACARS_V8_1_11/8.1.11.0",
+          "status": "pending_approval",
+          "discovered_at": "2026-04-03T17:01:11.127980+00:00",
+          "downloaded_at": "2026-04-03T17:01:12.668255+00:00",
+          "approved_at": null,
+          "published_at": null
+        },
+        "8.1.11.2": {
+          "sftp_folder": "8.1.11.2",
+          "sftp_path": "/ACARS_V8_1/ACARS_V8_1_11/8.1.11.2",
+          "status": "pending_approval",
+          "discovered_at": "2026-04-03T17:01:11.127980+00:00",
+          "downloaded_at": "2026-04-03T17:01:12.668255+00:00",
+          "approved_at": null,
+          "published_at": null
+        }
+      }
+    },
+    "8.1.12": {
+      "patches": {
+        "8.1.12.0": {
+          "sftp_folder": "8.1.12.0",
+          "sftp_path": "/ACARS_V8_1/ACARS_V8_1_12/8.1.12.0",
+          "status": "pending_approval",
+          "discovered_at": "2026-04-03T17:01:11.127980+00:00",
+          "downloaded_at": "2026-04-03T17:01:12.668255+00:00",
+          "approved_at": null,
+          "published_at": null
+        },
+        "8.1.12.1": {
+          "sftp_folder": "8.1.12.1",
+          "sftp_path": "/ACARS_V8_1/ACARS_V8_1_12/8.1.12.1",
+          "status": "pending_approval",
+          "discovered_at": "2026-04-03T17:01:11.127980+00:00",
+          "downloaded_at": "2026-04-03T17:01:12.668255+00:00",
+          "approved_at": null,
+          "published_at": null
+        },
+        "8.1.12.2": {
+          "sftp_folder": "8.1.12.2",
+          "sftp_path": "/ACARS_V8_1/ACARS_V8_1_12/8.1.12.2",
+          "status": "pending_approval",
+          "discovered_at": "2026-04-03T17:01:11.127980+00:00",
+          "downloaded_at": "2026-04-03T17:01:12.668255+00:00",
+          "approved_at": null,
+          "published_at": null
+        }
+      }
+    },
+    "8.1.3": {
+      "patches": {
+        "8.1.3.1": {
+          "sftp_folder": "v8.1.3.1",
+          "sftp_path": "/ACARS_V8_1/ACARS_V8_1_3/v8.1.3.1",
+          "status": "pending_approval",
+          "discovered_at": "2026-04-03T17:01:11.127980+00:00",
+          "downloaded_at": "2026-04-03T17:01:12.668255+00:00",
+          "approved_at": null,
+          "published_at": null
+        },
+        "8.1.3.2": {
+          "sftp_folder": "v8.1.3.2",
+          "sftp_path": "/ACARS_V8_1/ACARS_V8_1_3/v8.1.3.2",
+          "status": "pending_approval",
+          "discovered_at": "2026-04-03T17:01:11.127980+00:00",
+          "downloaded_at": "2026-04-03T17:01:12.668255+00:00",
+          "approved_at": null,
+          "published_at": null
+        }
+      }
+    },
+    "8.1.4": {
+      "patches": {
+        "8.1.4.1": {
+          "sftp_folder": "v8.1.4.1",
+          "sftp_path": "/ACARS_V8_1/ACARS_V8_1_4/v8.1.4.1",
+          "status": "pending_approval",
+          "discovered_at": "2026-04-03T17:01:11.127980+00:00",
+          "downloaded_at": "2026-04-03T17:01:12.668255+00:00",
+          "approved_at": null,
+          "published_at": null
+        }
+      }
+    },
+    "8.1.5": {
+      "patches": {
+        "8.1.5.0": {
+          "sftp_folder": "v8.1.5.0",
+          "sftp_path": "/ACARS_V8_1/ACARS_V8_1_5/v8.1.5.0",
+          "status": "pending_approval",
+          "discovered_at": "2026-04-03T17:01:11.127980+00:00",
+          "downloaded_at": "2026-04-03T17:01:12.668255+00:00",
+          "approved_at": null,
+          "published_at": null
+        }
+      }
+    },
+    "8.1.7": {
+      "patches": {
+        "8.1.7.0": {
+          "sftp_folder": "8.1.7.0",
+          "sftp_path": "/ACARS_V8_1/ACARS_V8_1_7/8.1.7.0",
+          "status": "pending_approval",
+          "discovered_at": "2026-04-03T17:01:11.127980+00:00",
+          "downloaded_at": "2026-04-03T17:01:12.668255+00:00",
+          "approved_at": null,
+          "published_at": null
+        },
+        "8.1.7.1": {
+          "sftp_folder": "8.1.7.1",
+          "sftp_path": "/ACARS_V8_1/ACARS_V8_1_7/8.1.7.1",
+          "status": "pending_approval",
+          "discovered_at": "2026-04-03T17:01:11.127980+00:00",
+          "downloaded_at": "2026-04-03T17:01:12.668255+00:00",
+          "approved_at": null,
+          "published_at": null
+        }
+      }
+    },
+    "8.1.8": {
+      "patches": {
+        "8.1.8.0": {
+          "sftp_folder": "v8.1.8.0",
+          "sftp_path": "/ACARS_V8_1/ACARS_V8_1_8/v8.1.8.0",
+          "status": "pending_approval",
+          "discovered_at": "2026-04-03T17:01:11.127980+00:00",
+          "downloaded_at": "2026-04-03T17:01:12.668255+00:00",
+          "approved_at": null,
+          "published_at": null
+        },
+        "8.1.8.1": {
+          "sftp_folder": "v8.1.8.1",
+          "sftp_path": "/ACARS_V8_1/ACARS_V8_1_8/v8.1.8.1",
+          "status": "pending_approval",
+          "discovered_at": "2026-04-03T17:01:11.127980+00:00",
+          "downloaded_at": "2026-04-03T17:01:12.668255+00:00",
+          "approved_at": null,
+          "published_at": null
+        }
+      }
+    },
+    "8.1.9": {
+      "patches": {
+        "8.1.9.0": {
+          "sftp_folder": "v8.1.9.0",
+          "sftp_path": "/ACARS_V8_1/ACARS_V8_1_9/v8.1.9.0",
+          "status": "pending_approval",
+          "discovered_at": "2026-04-03T17:01:11.127980+00:00",
+          "downloaded_at": "2026-04-03T17:01:12.668255+00:00",
+          "approved_at": null,
+          "published_at": null
+        },
+        "8.1.9.1": {
+          "sftp_folder": "v8.1.9.1",
+          "sftp_path": "/ACARS_V8_1/ACARS_V8_1_9/v8.1.9.1",
+          "status": "pending_approval",
+          "discovered_at": "2026-04-03T17:01:11.127980+00:00",
+          "downloaded_at": "2026-04-03T17:01:12.668255+00:00",
+          "approved_at": null,
+          "published_at": null
+        },
+        "8.1.9.2": {
+          "sftp_folder": "v8.1.9.2",
+          "sftp_path": "/ACARS_V8_1/ACARS_V8_1_9/v8.1.9.2",
+          "status": "pending_approval",
+          "discovered_at": "2026-04-03T17:01:11.127980+00:00",
+          "downloaded_at": "2026-04-03T17:01:12.668255+00:00",
+          "approved_at": null,
+          "published_at": null
+        }
+      }
+    }
+  }
+}

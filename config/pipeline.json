@@ -1,0 +1,108 @@
+{
+  "pipeline": {
+    "name": "OpsComm Docs & Binaries Pipeline",
+    "products": {
+      "ACARS_V8_1": {
+        "display_name": "ACARS V8.1",
+        "sftp_path": "/ACARS_V8_1",
+        "structure_type": "hierarchical",
+        "track_from": null
+      },
+      "ACARS_V8_0": {
+        "display_name": "ACARS V8.0",
+        "sftp_path": "/ACARS_V8_0",
+        "structure_type": "hierarchical",
+        "track_from": "8_0_28"
+      },
+      "ACARS_V7_3": {
+        "display_name": "ACARS V7.3",
+        "sftp_path": "/ACARS_V7_3",
+        "structure_type": "flat",
+        "track_from": "7_3_27_0"
+      }
+    },
+    "patch_lifecycle": {
+      "statuses": ["discovered", "downloaded", "pending_approval", "approved", "published"],
+      "flow": "discovered -> downloaded -> pending_approval -> approved -> published"
+    },
+    "jira": {
+      "enabled": false,
+      "base_url": "https://caeglobal.atlassian.net",
+      "cloud_id": "f835cbb2-8518-4c5a-857c-49f14108d0a6",
+      "project_key": "CFSSOCP",
+      "project_id": 10008,
+      "issue_type_id": "10163",
+      "issue_type_name": "Release notes, documents & binaries",
+      "auth_method": "basic_classic_token",
+      "search_endpoint": "/rest/api/3/search/jql",
+      "existing_detection_jql": "project = CFSSOCP AND cf[10563] ~ \"{version}\"",
+      "fields": {
+        "client": {
+          "id": "customfield_10328",
+          "type": "array",
+          "value": [{"value": "Flightscape"}]
+        },
+        "environment": {
+          "id": "customfield_10538",
+          "type": "option",
+          "value": {"value": "All the three"}
+        },
+        "product_name": {
+          "id": "customfield_10562",
+          "type": "string",
+          "value": "CAE\u00ae Operations Communication Manager"
+        },
+        "release_name": {
+          "id": "customfield_10563",
+          "type": "string",
+          "template": "Version {version}",
+          "examples": ["Version 8.1.11", "Version 8.0.28", "Version 7.3.27"]
+        },
+        "release_type": {
+          "id": "customfield_10616",
+          "type": "option",
+          "value": {"value": "Version"},
+          "all_options": ["Version", "Update", "Patch", "Sub Component"],
+          "note": "Binaries always use 'Version'. Docs pipeline may differ."
+        },
+        "release_approval": {
+          "id": "customfield_10617",
+          "type": "option",
+          "value": {"value": "Users should not request approval to access or download files on this release"}
+        },
+        "create_update_remove": {
+          "id": "customfield_10618",
+          "type": "option",
+          "values": {
+            "new": {"value": "New CAE Portal Release"},
+            "existing": {"value": "Existing CAE Portal Release"},
+            "remove": {"value": "Remove CAE Portal Release"}
+          },
+          "logic": "Use 'new' for first patch of a version folder, 'existing' for subsequent patches"
+        }
+      },
+      "summary_templates": {
+        "binaries": "Add Release Version {patch_id}",
+        "docs": "Add Release notes {patch_id}"
+      },
+      "description_template": "Hi Team,\nI have this binaries for the release {version} that should be added in a {new_or_existing} folder '{release_name}'.\nPlease contact me for any questions you may have.\n\nThank you very much,",
+      "attachment": {
+        "endpoint": "/rest/api/3/issue/{ticket_key}/attachments",
+        "header": "X-Atlassian-Token: no-check",
+        "zip_naming": "{patch_id}.zip",
+        "note": "Always full patch ID (e.g., 8.1.11.0.zip), same for new and existing releases"
+      }
+    },
+    "community_portal": {
+      "url": "https://communityportal.flightservices.cae.com/community/documents",
+      "product_id": 60420,
+      "naming_convention": "Version {major.minor.patch}",
+      "current_naming_issues": [
+        "Inconsistent prefix: sometimes 'Version', sometimes 'Patch', sometimes 'Update'",
+        "Inconsistent 'v' prefix: 'v8.0.28' vs '7.3.26' vs 'v7.3.25'",
+        "Bundled naming: 'Version 8.1.[1,2,3,4,5,6,7,8,9,10]' groups multiple versions",
+        "No clear hierarchy visible to customers"
+      ]
+    }
+  }
+}

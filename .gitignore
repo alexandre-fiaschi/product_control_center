@@ -1,0 +1,7 @@
+.env
+venv/
+__pycache__/
+*.pyc
+scripts/sftp_snapshot*.txt
+scripts/dry_run_output.txt
+.DS_Store
