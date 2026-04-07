@@ -22,8 +22,14 @@
       }
     },
     "patch_lifecycle": {
-      "statuses": ["discovered", "downloaded", "pending_approval", "approved", "published"],
-      "flow": "discovered -> downloaded -> pending_approval -> approved -> published"
+      "binaries": {
+        "statuses": ["discovered", "downloaded", "pending_approval", "approved", "published"],
+        "flow": "discovered -> downloaded -> pending_approval -> approved -> published"
+      },
+      "release_notes": {
+        "statuses": ["not_started", "discovered", "downloaded", "converted", "pending_approval", "approved", "pdf_exported", "published"],
+        "flow": "not_started -> discovered -> downloaded -> converted -> pending_approval -> approved -> pdf_exported -> published"
+      }
     },
     "jira": {
       "enabled": false,

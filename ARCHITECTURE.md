@@ -53,8 +53,8 @@ SFTP Root/
 - All patch IDs are **normalized to dotted format** in the tracker (e.g., `7_3_27_7` → `7.3.27.7`, `v8.1.9.1` → `8.1.9.1`).
 - All products stored **hierarchically in tracker** as `version/patch`, even V7.3.
 
-**MVP scope:** SFTP discovery → download patch folder → manual approval → mark published.
-Docs pipeline is designed but not active (no docs in tracked range).
+**MVP scope:** SFTP scan (discover + download + convert docs) → manual approval → auto-publish to Jira.
+Each patch produces two independent Jira tickets: one for binaries (.zip), one for release notes (.pdf).
 
 ---
 
@@ -185,11 +185,22 @@ Patch IDs are normalized to dotted format regardless of SFTP folder naming.
         "7.3.27.0": {
           "sftp_folder": "7_3_27_0",
           "sftp_path": "/ACARS_V7_3/7_3_27_0",
-          "status": "pending_approval",
-          "discovered_at": "2026-04-03T17:01:12Z",
-          "downloaded_at": "2026-04-03T17:01:12Z",
-          "approved_at": null,
-          "published_at": null
+          "binaries": {
+            "status": "pending_approval",
+            "discovered_at": "2026-04-03T17:01:12Z",
+            "downloaded_at": "2026-04-03T17:01:12Z",
+            "approved_at": null,
+            "published_at": null
+          },
+          "release_notes": {
+            "status": "not_started",
+            "discovered_at": null,
+            "downloaded_at": null,
+            "converted_at": null,
+            "approved_at": null,
+            "pdf_exported_at": null,
+            "published_at": null
+          }
         }
       }
     }
@@ -203,27 +214,161 @@ Patch IDs are normalized to dotted format regardless of SFTP folder naming.
 - File locking for concurrent access safety
 - Pydantic models validate all state before writing
 
-### Status State Machine
+### Status State Machines
 
+Each patch tracks **binaries** and **release notes** independently, with separate Jira tickets for each.
+
+**Binaries pipeline:**
 ```
 discovered → downloaded → pending_approval → approved → published
 ```
 
-The pipeline tracks each patch folder as a single unit. Download grabs the entire patch folder from SFTP. Approval and publish are manual actions via the UI.
+**Release notes pipeline:**
+```
+not_started → discovered → downloaded → converted → pending_approval → approved → pdf_exported → published
+```
+
+- `downloaded`: raw release notes fetched from SFTP
+- `converted`: raw doc injected into CAE branded .docx template
+- `pending_approval`: branded .docx ready for manual review
+- `approved`: operator has reviewed and confirmed the .docx content
+- `pdf_exported`: .docx exported to PDF (attached to Jira ticket)
+- `published`: Jira ticket created + PDF attached, posted to community portal
 
 ---
 
-## API Endpoints (MVP)
+## API Endpoints
 
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| GET | `/api/products` | List products with patch counts by status |
-| GET | `/api/patches` | List patches (filterable by product, status) |
-| GET | `/api/patches/{product_id}/{patch_id}` | Patch detail with contents |
-| POST | `/api/pipeline/scan` | Trigger SFTP scan for new patches |
-| POST | `/api/pipeline/fetch/{product_id}/{patch_id}` | Trigger binaries download |
-| POST | `/api/patches/{product_id}/{patch_id}/approve` | Approve patch binaries |
-| POST | `/api/patches/{product_id}/{patch_id}/publish` | Mark as published |
+### Scan & Discovery
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/pipeline/scan` | Scan all products: discover → download → convert docs → pending_approval |
+| POST | `/api/pipeline/scan/{product_id}` | Same but single product |
+
+### Products
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/products` | List all products with patch counts by status (binaries + release notes) |
+| GET | `/api/products/{product_id}` | Single product detail with version breakdown |
+
+### Patches
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/patches` | List all patches across products, filterable by status |
+| GET | `/api/patches/{product_id}` | List patches for a product (actionable + history) |
+| GET | `/api/patches/{product_id}/{patch_id}` | Single patch detail with full timeline |
+
+### Approve & Publish
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/patches/{product_id}/{patch_id}/binaries/approve` | Approve binaries → zip → Jira ticket → attach .zip → published |
+| POST | `/api/patches/{product_id}/{patch_id}/docs/approve` | Approve docs → export PDF → Jira ticket → attach .pdf → published |
+
+### Dashboard
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/dashboard/summary` | Counts by status for both pipelines across all products |
+
+**10 endpoints total.** Scan auto-downloads and auto-converts. Approve auto-publishes to Jira.
+
+---
+
+## Backend Workflows
+
+### Scan Workflow (`POST /api/pipeline/scan`)
+
+```
+1. Connect to SFTP server (paramiko)
+2. For each product (or single product if /{product_id}):
+   a. List version/patch folders on SFTP
+   b. Normalize folder names to dotted format (e.g., 8_0_28_1 → 8.0.28.1)
+   c. Apply track_from cutoff (skip older patches)
+   d. Compare against existing tracker — skip already-known patches
+   e. For each NEW patch found:
+      i.   Set binaries.status = "discovered"
+      ii.  Download full patch folder → patches/{PRODUCT_ID}/{PATCH_ID}/
+      iii. Set binaries.status = "downloaded"
+      iv.  Set binaries.status = "pending_approval"
+      v.   Check for DOC/ subfolder in patch
+      vi.  If DOC/ exists:
+           - Set release_notes.status = "discovered"
+           - Download raw release notes
+           - Set release_notes.status = "downloaded"
+           - Convert raw doc → inject into CAE branded .docx template
+           - Set release_notes.status = "converted"
+           - Set release_notes.status = "pending_approval"
+      vii. If no DOC/ folder:
+           - release_notes.status stays "not_started"
+3. Update last_scanned_at timestamp
+4. Save tracker JSON (atomic write)
+```
+
+**Key rules:**
+- Idempotent: re-scanning never duplicates existing patches
+- `track_from`: one-time config cutoff, never changes
+- `last_scanned_at`: updates every scan, used for display only
+
+### Approve Binaries Workflow (`POST /api/patches/{product_id}/{patch_id}/binaries/approve`)
+
+```
+1. Validate binaries.status == "pending_approval" (reject otherwise)
+2. Set binaries.status = "approved", approved_at = now
+3. Zip the patch folder → patches/{PRODUCT_ID}/{PATCH_ID}/{PATCH_ID}.zip
+4. Determine new/existing release folder:
+   - JQL: project = CFSSOCP AND cf[10563] ~ "Version {version}"
+   - No results → "New CAE Portal Release"
+   - Has results → "Existing CAE Portal Release"
+5. Create Jira ticket:
+   - Summary: "Add Release Version {patch_id}"
+   - All required fields from config/pipeline.json
+6. Attach .zip to Jira ticket
+7. Set binaries.status = "published", published_at = now
+8. Store jira_ticket_key + jira_ticket_url in tracker
+9. Save tracker JSON (atomic write)
+```
+
+**On error (e.g., Jira fails):** status stays at "approved", error returned. Retry will re-attempt from step 3.
+
+### Approve Docs Workflow (`POST /api/patches/{product_id}/{patch_id}/docs/approve`)
+
+```
+1. Validate release_notes.status == "pending_approval" (reject otherwise)
+2. Set release_notes.status = "approved", approved_at = now
+3. Export .docx → PDF
+   - Input:  patches/{PRODUCT_ID}/{PATCH_ID}/release_notes.docx
+   - Output: patches/{PRODUCT_ID}/{PATCH_ID}/release_notes.pdf
+4. Set release_notes.status = "pdf_exported", pdf_exported_at = now
+5. Determine new/existing release folder (same JQL as binaries)
+6. Create Jira ticket:
+   - Summary: "Add Release notes {patch_id}"
+   - All required fields from config/pipeline.json
+7. Attach .pdf to Jira ticket
+8. Set release_notes.status = "published", published_at = now
+9. Store jira_ticket_key + jira_ticket_url in tracker
+10. Save tracker JSON (atomic write)
+```
+
+**On error (e.g., PDF export fails):** status stays at the step that failed, error returned. Retry re-attempts from that step.
+
+### Shared: New/Existing Release Folder Logic
+
+Both approve workflows use the same Jira detection:
+
+```
+1. Search JQL: project = CFSSOCP AND cf[10563] ~ "Version {version}"
+   (e.g., "Version 8.1.12")
+2. If 0 results → this is the first patch for this version:
+   - create_update_remove = "New CAE Portal Release"
+3. If 1+ results → version folder already exists on portal:
+   - create_update_remove = "Existing CAE Portal Release"
+```
+
+### Tracker State — Append-Only
+
+- Patches are added to the tracker, **never removed**
+- Only statuses and timestamps change on existing entries
+- Once both pipelines reach `published`, the patch is done (stays as history)
+- Each pipeline stores its own `jira_ticket_key` and `jira_ticket_url`
 
 ---
 
@@ -332,14 +477,15 @@ SFTP is the first integration. Future integrations (Jira, email, PM tools) follo
 
 ---
 
-## Verification (MVP)
+## Verification
 
 1. `docker-compose up` → backend + frontend start
 2. Open dashboard → products listed with current patch counts
-3. Click "Scan SFTP" → new patches discovered, tracker JSONs updated
-4. Patches appear in list with `discovered` status
-5. Trigger download → patch folder downloaded from SFTP
-6. Approve a patch → status changes to `approved`
-7. Mark published → status changes to `published`
-8. Check `state/patches/ACARS_V8_1.json` → hierarchical state with normalized IDs
-9. Re-scan → only new patches added, existing ones untouched
+3. Click "Scan SFTP" → new patches discovered, downloaded, docs converted, all at `pending_approval`
+4. Patch list shows actionable patches (both pipelines visible per patch)
+5. Click "Approve" on binaries → auto-zips, creates Jira ticket, attaches .zip → `published`
+6. Response includes Jira ticket URL (clickable link in UI)
+7. Click "Approve" on docs → auto-exports PDF, creates Jira ticket, attaches .pdf → `published`
+8. Patch moves to "History" section (collapsed) when both pipelines are `published`
+9. Check `state/patches/ACARS_V8_1.json` → both pipelines with timestamps + Jira ticket keys
+10. Re-scan → only new patches added, existing ones untouched

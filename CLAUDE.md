@@ -33,6 +33,7 @@ OpsCommDocsPipeline/
 ├── .env                          # SFTP + Jira credentials (never commit)
 ├── .gitignore                    # Protects .env, venv, snapshots, __pycache__
 ├── ARCHITECTURE.md               # Detailed architecture and implementation plan
+├── FRONTEND_WORKFLOWS.md          # Frontend reference — API responses, UI mockups, rendering rules
 ├── CLAUDE.md                     # This file — project overview for Claude
 ├── PROGRESS.md                   # What's been done, what's next
 ├── HANDOFF_JIRA_INTEGRATION.md   # Jira integration handoff — fields, endpoints, findings
@@ -65,9 +66,11 @@ OpsCommDocsPipeline/
 SFTP scan -> discover new patches -> download patch folder -> pending_approval -> approved -> published
 ```
 
-Each patch tracks **binaries** and **release notes** independently:
+Each patch tracks **binaries** and **release notes** independently, with separate Jira tickets for each:
 - **Binaries:** `discovered -> downloaded -> pending_approval -> approved -> published`
-- **Release notes:** `not_started -> discovered -> downloaded -> converted -> pending_approval -> approved -> published`
+- **Release notes:** `not_started -> discovered -> downloaded -> converted -> pending_approval -> approved -> pdf_exported -> published`
+
+Release notes flow: raw doc downloaded from SFTP → converted into CAE branded .docx template → manual review & approval → exported to PDF → Jira ticket created with PDF attachment → published to portal.
 
 ## Key Decisions
 
