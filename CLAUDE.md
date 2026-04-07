@@ -65,7 +65,9 @@ OpsCommDocsPipeline/
 SFTP scan -> discover new patches -> download patch folder -> pending_approval -> approved -> published
 ```
 
-Status lifecycle: `discovered -> downloaded -> pending_approval -> approved -> published`
+Each patch tracks **binaries** and **release notes** independently:
+- **Binaries:** `discovered -> downloaded -> pending_approval -> approved -> published`
+- **Release notes:** `not_started -> discovered -> downloaded -> converted -> pending_approval -> approved -> published`
 
 ## Key Decisions
 
