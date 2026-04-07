@@ -7,6 +7,7 @@
         "7.3.27.0": {
           "sftp_folder": "7_3_27_0",
           "sftp_path": "/ACARS_V7_3/7_3_27_0",
+          "local_path": "patches/ACARS_V7_3/7.3.27.0",
           "binaries": {
             "status": "pending_approval",
             "discovered_at": "2026-04-03T17:01:12.664223+00:00",
@@ -31,6 +32,7 @@
         "7.3.27.1": {
           "sftp_folder": "7_3_27_1",
           "sftp_path": "/ACARS_V7_3/7_3_27_1",
+          "local_path": "patches/ACARS_V7_3/7.3.27.1",
           "binaries": {
             "status": "pending_approval",
             "discovered_at": "2026-04-03T17:01:12.664223+00:00",
@@ -55,6 +57,7 @@
         "7.3.27.5": {
           "sftp_folder": "7_3_27_5",
           "sftp_path": "/ACARS_V7_3/7_3_27_5",
+          "local_path": "patches/ACARS_V7_3/7.3.27.5",
           "binaries": {
             "status": "pending_approval",
             "discovered_at": "2026-04-03T17:01:12.664223+00:00",
@@ -79,6 +82,7 @@
         "7.3.27.7": {
           "sftp_folder": "7_3_27_7",
           "sftp_path": "/ACARS_V7_3/7_3_27_7",
+          "local_path": "patches/ACARS_V7_3/7.3.27.7",
           "binaries": {
             "status": "pending_approval",
             "discovered_at": "2026-04-03T17:01:12.664223+00:00",
@@ -103,6 +107,7 @@
         "7.3.27.8": {
           "sftp_folder": "7_3_27_8",
           "sftp_path": "/ACARS_V7_3/7_3_27_8",
+          "local_path": "patches/ACARS_V7_3/7.3.27.8",
           "binaries": {
             "status": "pending_approval",
             "discovered_at": "2026-04-03T17:01:12.664223+00:00",

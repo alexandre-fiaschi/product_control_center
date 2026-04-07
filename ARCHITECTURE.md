@@ -185,6 +185,7 @@ Patch IDs are normalized to dotted format regardless of SFTP folder naming.
         "7.3.27.0": {
           "sftp_folder": "7_3_27_0",
           "sftp_path": "/ACARS_V7_3/7_3_27_0",
+          "local_path": "patches/ACARS_V7_3/7.3.27.0",
           "binaries": {
             "status": "pending_approval",
             "discovered_at": "2026-04-03T17:01:12Z",
@@ -287,8 +288,9 @@ not_started → discovered → downloaded → converted → pending_approval →
    e. For each NEW patch found:
       i.   Set binaries.status = "discovered"
       ii.  Download full patch folder → patches/{PRODUCT_ID}/{PATCH_ID}/
-      iii. Set binaries.status = "downloaded"
-      iv.  Set binaries.status = "pending_approval"
+      iii. Set local_path = "patches/{PRODUCT_ID}/{PATCH_ID}"
+      iv.  Set binaries.status = "downloaded"
+      v.   Set binaries.status = "pending_approval"
       v.   Check for DOC/ subfolder in patch
       vi.  If DOC/ exists:
            - Set release_notes.status = "discovered"

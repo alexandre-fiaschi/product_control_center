@@ -269,6 +269,7 @@ Every `jira_ticket_key` is a clickable link using `jira_ticket_url`. Display as:
   "version": "8.1.12",
   "sftp_folder": "8.1.12.2",
   "sftp_path": "/ACARS_V8_1/ACARS_V8_1_12/8.1.12.2",
+  "local_path": "patches/ACARS_V8_1/8.1.12.2",
   "binaries": {
     "status": "published",
     "discovered_at": "2026-04-07T10:00:00Z",
