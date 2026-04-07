@@ -126,7 +126,6 @@ OpsCommDocsPipeline/
 │   ├── package.json
 │   └── tailwind.config.ts
 ├── state/                             # Runtime state (JSON files)
-│   ├── products.json
 │   └── patches/
 │       ├── ACARS_V8_1.json
 │       ├── ACARS_V8_0.json

@@ -31,7 +31,7 @@ This document describes the OpsComm Docs & Binaries Pipeline, an internal workfl
 
 The pipeline supports multiple product lines (Flightscape versioned releases, ACARS V8, etc.) and understands version-patch bundling — for example, sub-patches 7.3.27.0 through 7.3.27.8 are automatically grouped as a single "Version 7.3.27" release.
 
-*Currently, the Jira integration is not yet active due to pending admin access. Files are staged in an approved folder for manual Jira ticket creation. Once Atlassian MCP integration is enabled (see Section 7 and 11), the pipeline will automatically create Jira tasks per approved version.*
+*Jira integration has been validated (2026-04-03): classic API token + Basic Auth works, test ticket created (CFSSOCP-6590), attachment upload confirmed. The pipeline creates per-patch Jira tickets (one for binaries, one for release notes). Full automation via FastAPI backend is next.*
 
 ---
 
@@ -88,10 +88,10 @@ ACARS_V8_0/
   ...
 ```
 
-**Example Flightscape structure (flat):**
+**Example ACARS V7.3 structure (flat):**
 
 ```
-Flightscape_7_3/
+ACARS_V7_3/
   7_3_27_0/                          ← patch folder (no parent version folder)
     WEBAPPS/
     DOC/
@@ -215,20 +215,29 @@ Binaries are attached **after** ticket creation (not at creation time):
 3. Requires header: `X-Atlassian-Token: no-check`
 4. Content-Type: `multipart/form-data`
 
-### Jira Task Structure Per Version
+### Jira Ticket Structure Per Patch
 
-Each SFTP version folder (e.g., `ACARS_V8_1_11` = version 8.1.11) generates **one Jira task**. All sub-patches within that version (8.1.11.0, 8.1.11.2, etc.) are included in the same task. When new sub-patches arrive later for an existing version, the same ticket is updated with the new files.
+Each patch produces **two independent Jira tickets**: one for binaries (.zip) and one for release notes (.pdf). Tickets are created per-patch, not per-version.
 
-**Example Jira task for version 8.1.13:**
+**Example Jira tickets for patch 8.1.13.0:**
 
 ```
-Task:         Add Release Version v8.1.13
-Space:        CFS-ServiceOps-CommPortal
-Product Name: CAE® Operations Communication Manager
-Release Name: Version v8.1.13
-Release type: Version
-Contents:     binaries + release notes for all sub-patches (8.1.13.0, 8.1.13.2, etc.)
+Ticket #1 (Binaries):
+  Summary:      Add Release Version v8.1.13.0
+  Product Name: CAE® Operations Communication Manager
+  Release Name: Version 8.1.13
+  Release Type: Version
+  Attachment:   8.1.13.0.zip
+
+Ticket #2 (Release Notes):
+  Summary:      Add Release notes 8.1.13.0
+  Product Name: CAE® Operations Communication Manager
+  Release Name: Version 8.1.13
+  Release Type: Version
+  Attachment:   release_notes.pdf
 ```
+
+The Create/Update/Remove field is determined by JQL: if a ticket already exists with the same Release Name (version), the new ticket uses "Existing CAE Portal Release"; otherwise "New CAE Portal Release".
 
 ### Community Portal Naming Convention
 
@@ -360,22 +369,15 @@ Notes:
 ```
 OpsCommDocsPipeline/
 ├── config/
-│   ├── pipeline.json              # State tracker (full audit trail)
-│   └── pipeline_flow.json         # Pipeline stage definitions & naming rules
+│   └── pipeline.json              # Products, lifecycle, Jira fields, portal settings
 ├── patches/
 │   ├── ACARS_V8_1/
-│   │   ├── 8.1.11.0/             # Patch (independent deliverable)
-│   │   │   ├── incoming/         # Full SFTP mirror (Binaries/, Script/, etc.)
-│   │   │   └── approved/         # Reviewed, ready for Jira
+│   │   ├── 8.1.11.0/             # Patch folder (flat — full SFTP contents preserved)
 │   │   └── 8.1.11.2/
-│   │       ├── incoming/
-│   │       └── approved/
 │   ├── ACARS_V8_0/
 │   │   └── ...
-│   └── Flightscape_7_3/
-│       ├── 7_3_27_0/
-│       │   ├── incoming/
-│       │   └── approved/
+│   └── ACARS_V7_3/
+│       ├── 7.3.27.0/
 ├── templates/
 │   └── Flightscape-English-External Business Document.docx
 ```
@@ -384,7 +386,7 @@ OpsCommDocsPipeline/
 
 The state tracker records the full lifecycle of every patch passing through the pipeline. For each patch, it tracks:
 
-- Patch status: in_progress, processed, approved, published
+- Patch status: discovered, downloaded, pending_approval, approved, published (binaries); not_started, discovered, downloaded, converted, pending_approval, approved, pdf_exported, published (release notes)
 - Download: timestamp, file manifest (all folders and files)
 - Processing: whether docs (if present) have been templated
 - Approval: who approved, when, and any notes
@@ -402,13 +404,13 @@ Example: `ACARS_V8_1` → `ACARS_V8_1_11` → `8.1.11.0`
 
 Each patch (e.g., 8.1.11.0, 8.1.11.2) is an independent deliverable.
 
-### Flightscape Naming (Flat)
+### ACARS V7.3 Naming (Flat)
 
 **Patch folder format:** `{major}_{minor}_{patch}_{sub}`
 
 Example: `7_3_27_5` → Patch 5 of version 7.3.27
 
-No parent version folder; each patch folder is independent. Known subfolders may vary (WEBAPPS, DOC, Scripts, Binaries, etc.).
+No parent version folder on SFTP; each patch folder sits directly under `ACARS_V7_3/`. Version is parsed from folder name (e.g., `7_3_27_5` → version 7.3.27, patch 7.3.27.5). Known subfolders may vary (WEBAPPS, DOC, Scripts, Binaries, etc.).
 
 ### Patch Independence
 
@@ -428,7 +430,7 @@ The SFTP server hosts multiple product lines, each with different organizational
 
 - **ACARS V8.1:** Hierarchical structure (`ACARS_V8_1` → `ACARS_V8_1_11` → `8.1.11.0/`)
 - **ACARS V8.0:** Hierarchical structure (`ACARS_V8_0` → version folder → patch folder/)
-- **Flightscape 7.3:** Flat structure (`7_3_27_0/`, `7_3_27_5/`, etc.)
+- **ACARS V7.3:** Flat structure (`ACARS_V7_3/` → `7_3_27_0/`, `7_3_27_5/`, etc.)
 
 ### Other Known Product Lines
 
@@ -517,30 +519,25 @@ The demo showed creating multiple stories from a text file (story_list.txt) in u
 3. ~~Build the state tracker update logic~~ ✓ (per-product JSON trackers)
 4. ~~Jira API connection tested and field mappings confirmed~~ ✓ (`scripts/test_jira.py`)
 5. ~~Map pipeline fields to Jira project/field IDs~~ ✓ (all 10 required fields for issue type 10163)
+6. ~~Create real test ticket (CFSSOCP-6590)~~ ✓ — all fields accepted, attachment uploaded
+7. ~~Build `create_jira_ticket.py`~~ ✓ — takes `--patch-id`, creates ticket, uploads attachment
+8. ~~New/existing folder detection via JQL~~ ✓ — searches by Release Name field (`cf[10563]`)
+9. ~~Search API migration~~ ✓ — old `/rest/api/3/search` removed (410), using `POST /rest/api/3/search/jql`
 
-### Immediate — Jira Automation (In Progress)
+### Next — Project Restructure & Backend/Frontend Build
 
-1. Create a real test ticket to confirm Jira accepts the payload
-2. Test attachment upload (zip binaries + POST to ticket)
-3. Build `create_jira_ticket.py` — takes patch ID, creates ticket, writes ticket key to state
-4. Add new/existing folder detection (JQL query for existing version tickets)
-5. Test with a single version before batch processing
+1. Restructure project into `backend/` (Python + FastAPI) and `frontend/` (Next.js + Tailwind)
+2. Extract existing scripts into proper backend modules
+3. Build FastAPI API endpoints (10 endpoints defined in ARCHITECTURE.md)
+4. Build Next.js dashboard with approval workflows
+5. Real SFTP download (currently simulated)
+6. Docker Compose setup
 
-### Short-Term — Binaries Pipeline End-to-End
-
-1. Real SFTP download (currently simulated)
-2. Approval workflow via API/UI
-3. Jira ticket creation triggered by approval
-4. Attachment upload (zip + attach approved binaries)
-5. Status tracking (poll ticket status, update state)
-6. Batch processing for multiple simultaneous approvals
-
-### Medium-Term — Docs Pipeline & Infrastructure
+### Medium-Term — Docs Pipeline
 
 1. Obtain example raw documentation files for converter development
 2. Build the document template converter (docx-to-docx with CAE branding)
-3. FastAPI backend + Next.js frontend + Docker Compose
-4. Dashboard for pipeline monitoring and approval
+3. PDF export for release notes
 
 ### Future Enhancements
 

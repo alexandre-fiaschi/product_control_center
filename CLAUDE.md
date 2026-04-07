@@ -37,7 +37,9 @@ OpsCommDocsPipeline/
 ├── CLAUDE.md                     # This file — project overview for Claude
 ├── PROGRESS.md                   # What's been done, what's next
 ├── HANDOFF_JIRA_INTEGRATION.md   # Jira integration handoff — fields, endpoints, findings
+├── PLAN_RESTRUCTURE.md           # Plan to split into backend/ + frontend/
 ├── OpsComm Pipeline - Project Documentation.md  # Original project documentation
+├── product-control-center-mockup.jsx  # React UI mockup (60KB, full dashboard reference)
 │
 ├── config/
 │   └── pipeline.json             # Products, lifecycle, Jira fields, portal settings

@@ -29,24 +29,24 @@ This document is a reference for the frontend developer. It covers every view, t
 
 ```json
 {
-  "total_patches": 35,
+  "total_patches": 34,
   "binaries": {
     "pending_approval": 5,
     "approved": 0,
-    "published": 30
+    "published": 29
   },
   "release_notes": {
     "not_started": 3,
     "pending_approval": 7,
-    "published": 25
+    "published": 24
   },
   "by_product": [
     {
       "product_id": "ACARS_V8_1",
       "display_name": "ACARS V8.1",
       "actionable": 5,
-      "published": 18,
-      "total": 23
+      "published": 19,
+      "total": 24
     },
     {
       "product_id": "ACARS_V8_0",
@@ -74,14 +74,14 @@ This document is a reference for the frontend developer. It covers every view, t
 │  OpsComm Pipeline Dashboard                    [ Scan SFTP ]    │
 │                                                                 │
 │  Last scan: Apr 7, 10:00                                        │
-│  Total patches: 35   Actionable: 6   Published: 29              │
+│  Total patches: 34   Actionable: 6   Published: 28              │
 │                                                                 │
 │  ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐   │
 │  │ ACARS V8.1      │ │ ACARS V8.0      │ │ ACARS V7.3      │   │
 │  │                 │ │                 │ │                 │   │
-│  │ 23 patches      │ │ 5 patches       │ │ 5 patches       │   │
+│  │ 24 patches      │ │ 5 patches       │ │ 5 patches       │   │
 │  │ 5 actionable    │ │ 1 actionable    │ │ 0 actionable    │   │
-│  │ 18 published    │ │ 4 published     │ │ 5 published     │   │
+│  │ 19 published    │ │ 4 published     │ │ 5 published     │   │
 │  │                 │ │                 │ │                 │   │
 │  │ [ View ]        │ │ [ View ]        │ │ [ View ]        │   │
 │  └─────────────────┘ └─────────────────┘ └─────────────────┘   │
@@ -113,7 +113,7 @@ This document is a reference for the frontend developer. It covers every view, t
         "published": 15
       }
     },
-    "total_patches": 23
+    "total_patches": 24
   }
 ]
 ```
