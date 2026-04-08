@@ -10,10 +10,27 @@ Automate the ingestion of software releases from an SFTP server for the OpsComm 
 ## Tech Stack
 
 - **Backend:** Python + FastAPI (not yet built)
-- **Frontend:** Next.js + Tailwind (not yet built)
+- **Frontend:** React + Vite + Tailwind (not yet built — mockup exists as `product-control-center-mockup.jsx`)
 - **State:** JSON files on disk (no database for MVP)
 - **SFTP:** paramiko
-- **Containerization:** Docker Compose (planned)
+- **Deployment:** Single process — FastAPI serves both API and built frontend static files
+- **Containerization:** Single Docker container (planned)
+
+## Development Workflow
+
+**Dev mode** (active UI development — two terminals for hot reload):
+```
+Terminal 1: cd backend && uvicorn app.main:app --reload          # API on :8000
+Terminal 2: cd frontend && npm run dev                            # Vite dev server on :5173
+```
+Vite proxies `/api/*` to `:8000`. Edit React code → instant hot reload.
+
+**Production mode** (one process, one port):
+```
+cd frontend && npm run build                                      # builds to frontend/dist/
+cd backend && uvicorn app.main:app                                # serves API + frontend on :8000
+```
+FastAPI mounts `frontend/dist/` as static files. Open `localhost:8000` — everything on one port, no proxy, no CORS.
 
 ## Tracked Products
 

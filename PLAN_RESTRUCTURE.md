@@ -6,6 +6,20 @@ The OpsComm Pipeline project currently has a flat structure with Python scripts 
 
 This is scaffolding only — we're creating the folder structure, moving/refactoring existing code into proper modules, and setting up the project files (requirements.txt, package.json, etc.). No new features.
 
+## Architecture Decision: Single-Process Deployment
+
+**Frontend:** React + Vite (not Next.js) — simpler, no SSR overhead, builds to static files.
+**Deployment:** FastAPI serves both the API and the built frontend from one process on one port.
+**Docker:** Single container, single port. No docker-compose needed for two services.
+
+**Why:**
+- Single user on localhost — no SSR, no SEO, no multi-user scaling needed
+- Same origin = no CORS config, no proxy config
+- One command to run: `uvicorn app.main:app`
+- The mockup is already pure React — zero rewriting needed
+
+**Dev workflow:** Use Vite dev server (`npm run dev`) with proxy during active UI development for hot reload. Build once with `npm run build` when UI is stable, then just run FastAPI.
+
 ---
 
 ## Target Structure
@@ -15,7 +29,7 @@ OpsCommDocsPipeline/
 ├── backend/
 │   ├── app/
 │   │   ├── __init__.py
-│   │   ├── main.py                    # FastAPI app, CORS, lifespan
+│   │   ├── main.py                    # FastAPI app + serves frontend static files
 │   │   ├── config.py                  # pydantic-settings, loads .env + pipeline.json
 │   │   ├── state/
 │   │   │   ├── __init__.py
@@ -54,35 +68,36 @@ OpsCommDocsPipeline/
 │   ├── requirements.txt               # paramiko, python-dotenv, requests, fastapi, uvicorn, pydantic-settings
 │   └── Dockerfile
 │
-├── frontend/
+├── frontend/                          # React + Vite (builds to static files)
 │   ├── src/
-│   │   ├── app/
-│   │   │   ├── layout.tsx             # Root layout, dark theme
-│   │   │   ├── page.tsx               # Dashboard
-│   │   │   └── patches/
-│   │   │       ├── page.tsx           # Patch list
-│   │   │       └── [product]/
-│   │   │           └── [patch]/
-│   │   │               └── page.tsx   # Patch detail
+│   │   ├── App.tsx                    # Root component — sidebar + view routing
+│   │   ├── main.tsx                   # Entry point
 │   │   ├── components/
 │   │   │   ├── layout/
-│   │   │   │   └── Sidebar.tsx
+│   │   │   │   ├── Sidebar.tsx
+│   │   │   │   └── Header.tsx
 │   │   │   ├── patches/
-│   │   │   │   ├── PatchCard.tsx
+│   │   │   │   ├── PatchTable.tsx
 │   │   │   │   ├── StatusBadge.tsx
+│   │   │   │   ├── PatchDetailModal.tsx
 │   │   │   │   └── JiraApprovalModal.tsx
 │   │   │   └── shared/
-│   │   │       └── DataTable.tsx
+│   │   │       ├── SummaryCard.tsx
+│   │   │       ├── Th.tsx
+│   │   │       └── Td.tsx
+│   │   ├── views/
+│   │   │   ├── Dashboard.tsx          # Dashboard view
+│   │   │   └── Pipeline.tsx           # Pipeline view (actionable + history)
 │   │   └── lib/
-│   │       ├── api.ts                 # Typed fetch wrapper for backend
+│   │       ├── api.ts                 # Typed fetch wrapper (/api/*)
 │   │       ├── types.ts               # TypeScript types matching backend models
-│   │       └── constants.ts           # Status colors, theme tokens
+│   │       └── constants.ts           # Theme tokens, status config, field options
+│   ├── index.html
 │   ├── public/
 │   ├── package.json
+│   ├── vite.config.ts                 # Dev proxy: /api → localhost:8000
 │   ├── tailwind.config.ts
-│   ├── tsconfig.json
-│   ├── next.config.ts                 # API proxy to backend in dev
-│   └── Dockerfile
+│   └── tsconfig.json
 │
 ├── state/                             # Stays at root — backend reads/writes
 │   └── patches/
@@ -97,7 +112,7 @@ OpsCommDocsPipeline/
 │   ├── test_sftp.py
 │   ├── test_jira.py
 │   └── create_jira_ticket.py
-├── docker-compose.yml
+├── Dockerfile                         # Single container: Python + built frontend
 ├── .env
 ├── .env.example
 ├── .gitignore
@@ -178,28 +193,30 @@ OpsCommDocsPipeline/
 ### Step 4: Create FastAPI app + API endpoints
 - `config.py` — Pydantic Settings loading .env + pipeline.json
 - `state/models.py` — Pydantic models matching JSON structure
-- `main.py` — FastAPI app with CORS, router includes
+- `main.py` — FastAPI app, router includes, serves frontend static files via `StaticFiles`
 - `api/products.py` — product list/detail endpoints
 - `api/patches.py` — patch CRUD + approve endpoints
 - `api/pipeline.py` — scan trigger + dashboard summary
 - `services/orchestrator.py` — scan → discover → update state flow
 - `pipelines/` — stubs for binaries fetcher/processor and docs
+- No CORS config needed — frontend served from same origin
 
-### Step 5: Scaffold frontend with Next.js
-- Run `npx create-next-app@latest frontend` (TypeScript + Tailwind + App Router + src dir)
+### Step 5: Scaffold frontend with React + Vite
+- Run `npm create vite@latest frontend -- --template react-ts`
+- Install Tailwind, lucide-react, recharts, @tanstack/react-query, sonner
 - Create component directory structure
-- Create `lib/api.ts` — typed fetch wrapper
-- Create `lib/types.ts` — TypeScript types matching backend
-- Create `lib/constants.ts` — status colors + theme tokens from mockup
-- Update `next.config.ts` — API proxy rewrite to localhost:8000
+- Create `lib/api.ts` — typed fetch wrapper (`/api/*` calls)
+- Create `lib/types.ts` — TypeScript types matching backend models
+- Create `lib/constants.ts` — theme tokens + status config from mockup
+- Update `vite.config.ts` — dev proxy: `/api` → `http://localhost:8000`
 
-### Step 6: Docker Compose + env template
-- `docker-compose.yml` with `api` and `web` services
-- Backend volume mounts for state/, config/, patches/, templates/
+### Step 6: Docker + env template
+- Single `Dockerfile` at root: multi-stage build (Node builds frontend, Python runs everything)
 - `.env.example` with all keys (no secrets)
+- Run: `docker build -t opscomm-pipeline . && docker run -p 8000:8000 opscomm-pipeline`
 
 ### Step 7: Update project docs + gitignore
-- Update `.gitignore` for node_modules/, .next/, frontend/.env.local
+- Update `.gitignore` for node_modules/, frontend/dist/
 - Update `CLAUDE.md` project structure section
 - Scripts kept as-is for reference
 
@@ -388,7 +405,19 @@ Use FastAPI's `TestClient` with mocked integrations (mock SFTP, mock Jira).
 ---
 
 ## Verification
-- `cd backend && pip install -r requirements.txt && python -m uvicorn app.main:app` → starts on :8000
-- `cd frontend && npm install && npm run dev` → starts on :3000
+
+**Dev mode (two terminals):**
+- `cd backend && pip install -r requirements.txt && uvicorn app.main:app --reload` → API on :8000
+- `cd frontend && npm install && npm run dev` → Vite dev server on :5173, proxies /api to :8000
+- Open `http://localhost:5173` → dashboard loads with hot reload
+
+**Production mode (one process):**
+- `cd frontend && npm run build` → builds to `frontend/dist/`
+- `cd backend && uvicorn app.main:app` → serves API + frontend on :8000
+- Open `http://localhost:8000` → dashboard + API on same port, no proxy
 - `curl http://localhost:8000/api/dashboard/summary` → returns JSON
-- Frontend dashboard loads and proxies API calls to backend
+
+**Docker:**
+- `docker build -t opscomm-pipeline .`
+- `docker run -p 8000:8000 --env-file .env opscomm-pipeline`
+- Open `http://localhost:8000` → everything in one container

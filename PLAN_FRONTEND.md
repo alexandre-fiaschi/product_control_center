@@ -2,9 +2,17 @@
 
 ## Context
 
-The frontend is a Next.js (TypeScript) + Tailwind app that serves as the UI for the OpsComm Pipeline. It's an internal ops tool used by one person (Alex) on localhost. It talks to the FastAPI backend via HTTP — no direct SFTP, Jira, or file system access.
+The frontend is a **React + Vite** (TypeScript) + Tailwind app that serves as the UI for the OpsComm Pipeline. It's an internal ops tool used by one person (Alex) on localhost. It talks to the FastAPI backend via `/api/*` calls — no direct SFTP, Jira, or file system access.
 
-A fully functional React mockup already exists (`product-control-center-mockup.jsx`, 900 lines) with real data, correct Jira field mappings, and complete visual design. This plan turns that mockup into a real Next.js app with live API integration.
+A fully functional React mockup already exists (`product-control-center-mockup.jsx`, 900 lines) with correct Jira field mappings and complete visual design. This plan turns that mockup into a real app with live API integration.
+
+**Why React + Vite instead of Next.js:**
+- Single user on localhost — no SSR, no SEO needed
+- The mockup is already pure React — zero rewriting needed
+- Vite builds to static files that FastAPI serves directly
+- One process, one port, no CORS, no proxy in production
+
+**Deployment:** FastAPI serves both the API (`/api/*`) and the built frontend (static files from `frontend/dist/`) on a single port. In dev, Vite's dev server runs separately with a proxy for hot reload.
 
 **Depends on:** FastAPI backend being built first (10 API endpoints defined in `FRONTEND_WORKFLOWS.md`).
 
@@ -102,11 +110,12 @@ A fully functional React mockup already exists (`product-control-center-mockup.j
 
 ```
 frontend/src/
-├── app/
-│   ├── layout.tsx                    # Root layout + sidebar
-│   ├── page.tsx                      # Dashboard (/)
-│   └── pipeline/
-│       └── page.tsx                  # Pipeline view (/pipeline)
+├── App.tsx                           # Root — sidebar + view switching (useState)
+├── main.tsx                          # Entry point, React Query provider
+│
+├── views/
+│   ├── Dashboard.tsx                 # Dashboard view (from mockup lines 643–745)
+│   └── Pipeline.tsx                  # Pipeline view (from mockup lines 748–886)
 │
 ├── components/
 │   ├── layout/
@@ -130,6 +139,8 @@ frontend/src/
     └── constants.ts                  # Theme tokens + status config
 ```
 
+**No file-based routing.** Views switch via `useState` in `App.tsx` (same pattern as the mockup's `currentView`). Two views, not enough pages to justify a router.
+
 ---
 
 ## Shared Constants (`lib/constants.ts`)
@@ -152,7 +163,7 @@ These are used across multiple components and should live in one place.
 Typed wrapper around `fetch`. All calls go through this.
 
 ```typescript
-const API_BASE = "/api";  // proxied to localhost:8000 by next.config.ts
+const API_BASE = "/api";  // same origin in prod, proxied to localhost:8000 by vite in dev
 
 // GET helpers
 getDashboardSummary()                          → GET /api/dashboard/summary
@@ -371,25 +382,30 @@ Optional: a collapsible log panel at the bottom of the screen showing recent act
 
 ---
 
-## Next.js Config (`next.config.ts`)
+## Vite Config (`vite.config.ts`)
 
-API proxy so frontend calls `/api/*` and Next.js forwards to FastAPI:
+Dev proxy so the Vite dev server forwards `/api/*` to FastAPI:
 
 ```typescript
-rewrites: [
-  { source: "/api/:path*", destination: "http://localhost:8000/api/:path*" }
-]
+export default defineConfig({
+  server: {
+    proxy: {
+      "/api": "http://localhost:8000",
+    },
+  },
+});
 ```
 
-No CORS issues in dev. In Docker, the proxy goes to `http://api:8000`.
+Only needed during development (hot reload). In production, FastAPI serves everything on one port — no proxy.
 
 ---
 
 ## Dependencies
 
 ```
-next, react, react-dom          — framework
+react, react-dom                — framework
 typescript, @types/react        — types
+vite, @vitejs/plugin-react      — build tool
 tailwindcss, postcss            — styling
 lucide-react                    — icons (already used in mockup)
 recharts                        — pie chart (already used in mockup)
@@ -402,12 +418,13 @@ sonner (or react-hot-toast)     — toast notifications
 ## Implementation Order
 
 ### Phase 1: Shell + Static UI
-1. Scaffold Next.js app (`npx create-next-app`)
-2. Create `lib/constants.ts` — extract `dk`, `STATUS_CONFIG`, `FIELD_OPTIONS` from mockup
-3. Create `lib/types.ts` — TypeScript types from FRONTEND_WORKFLOWS.md response shapes
-4. Create `lib/api.ts` — typed fetch wrapper (returns mock data initially)
-5. Build `Sidebar.tsx` + `Header.tsx` + root layout
-6. Build `StatusBadge.tsx`, `SummaryCard.tsx`, `Th.tsx`, `Td.tsx`
+1. Scaffold React app (`npm create vite@latest frontend -- --template react-ts`)
+2. Install Tailwind, lucide-react, recharts, @tanstack/react-query, sonner
+3. Create `lib/constants.ts` — extract `dk`, `STATUS_CONFIG`, `FIELD_OPTIONS` from mockup
+4. Create `lib/types.ts` — TypeScript types from FRONTEND_WORKFLOWS.md response shapes
+5. Create `lib/api.ts` — typed fetch wrapper (returns mock data initially)
+6. Build `App.tsx` with `Sidebar.tsx` + `Header.tsx` + view switching
+7. Build `StatusBadge.tsx`, `SummaryCard.tsx`, `Th.tsx`, `Td.tsx`
 
 ### Phase 2: Dashboard
 7. Build Dashboard page (`/`) — summary cards, pie chart, product cards, quick actionable table

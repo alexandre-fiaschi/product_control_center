@@ -63,10 +63,13 @@ Each patch produces two independent Jira tickets: one for binaries (.zip), one f
 | Layer | Choice | Why |
 |-------|--------|-----|
 | Backend | **Python + FastAPI** | Best for SFTP/docx work, async, auto OpenAPI docs |
-| Frontend | **Next.js (TypeScript) + Tailwind** | Fast iteration, wrappable in Tauri later |
+| Frontend | **React + Vite (TypeScript) + Tailwind** | Pure SPA, builds to static files, no SSR overhead |
 | State | **JSON files on disk** | Simple, debuggable, no DB overhead for MVP |
-| Containerization | **Docker Compose** | Backend + frontend, runs on Mac now, deployable later |
+| Deployment | **Single process** | FastAPI serves API + built frontend on one port |
+| Containerization | **Single Docker container** | One image, one port, no compose needed |
 | Triggering | **Manual** (API/UI button) | No auto-polling. Future: triggered by email |
+
+**Why React + Vite instead of Next.js:** Single user on localhost, no SSR/SEO needed, mockup is already pure React, one process is simpler than two.
 
 **Future additions** (when needed): PostgreSQL, WebSockets, Alembic migrations, event bus.
 

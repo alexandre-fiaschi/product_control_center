@@ -157,6 +157,31 @@ Existing tickets in CFSSOCP use different conventions than our new templates:
 
 ---
 
+## Architecture Decision: Single-Process Deployment (2026-04-08)
+
+**Stack:** React + Vite (frontend) + FastAPI (backend), served as one process on one port.
+
+**How it works:**
+- React app builds to static files (`frontend/dist/`)
+- FastAPI serves both the API (`/api/*`) and the static frontend on the same port
+- One process, one port (`localhost:8000`), no CORS, no proxy in production
+
+**Dev workflow (two terminals, for hot reload):**
+```
+Terminal 1: cd backend && uvicorn app.main:app --reload    # API on :8000
+Terminal 2: cd frontend && npm run dev                      # Vite on :5173, proxies /api → :8000
+```
+
+**Production (one command):**
+```
+cd frontend && npm run build
+cd backend && uvicorn app.main:app                          # serves everything on :8000
+```
+
+**Why not Next.js:** Single user on localhost — no SSR, no SEO, no multi-user scaling. The mockup is pure React. One process eliminates CORS/proxy config.
+
+---
+
 ## Key Files
 
 | File | Purpose |
