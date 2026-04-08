@@ -59,7 +59,7 @@ The frontend is React + Vite + Tailwind. All components and styles are extracted
 - `FRONTEND_WORKFLOWS.md` — API response shapes, rendering rules, UI mockups
 - `config/pipeline.json` — field options (client, environment, release type)
 
-### Block F1: Scaffold + Shared Code (small)
+### Block F1: Scaffold + Shared Code (small) ✅
 
 Vite scaffold, install deps, configure proxy, extract shared constants/types/API client from mockup.
 
@@ -146,7 +146,7 @@ cd frontend && npx playwright test         # E2E tests
 
 | Block | What | Size | Depends on | Status |
 |-------|------|------|------------|--------|
-| F1 | Scaffold + Shared Code | Small | Backend complete | |
+| F1 | Scaffold + Shared Code | Small | Backend complete | ✅ Done |
 | F2 | Layout + Dashboard | Medium | F1 | |
 | F3 | Pipeline View | Medium | F2 | |
 | F4 | Modals + Actions | Large | F3 | |
