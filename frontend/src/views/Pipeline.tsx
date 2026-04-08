@@ -127,10 +127,42 @@ export default function Pipeline() {
 
   if (isLoading) {
     return (
-      <div className="space-y-6">
-        <div className="rounded-xl p-4 h-14 animate-pulse" style={{ backgroundColor: dk.card }} />
-        <div className="rounded-xl p-5 animate-pulse" style={{ backgroundColor: dk.card, height: 300 }} />
-        <div className="rounded-xl p-5 animate-pulse" style={{ backgroundColor: dk.card, height: 120 }} />
+      <div className="space-y-6 animate-pulse">
+        {/* Filter bar skeleton */}
+        <div className="rounded-xl p-4 flex items-center gap-4" style={{ backgroundColor: dk.card, border: `1px solid ${dk.border}` }}>
+          <div className="w-64 h-8 rounded-lg" style={{ backgroundColor: dk.surface }} />
+          <div className="w-32 h-8 rounded-lg" style={{ backgroundColor: dk.surface }} />
+          <div className="w-32 h-8 rounded-lg" style={{ backgroundColor: dk.surface }} />
+        </div>
+        {/* Actionable table skeleton */}
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: dk.surface }} />
+            <div className="w-36 h-5 rounded" style={{ backgroundColor: dk.surface }} />
+          </div>
+          <div className="rounded-xl p-4" style={{ backgroundColor: dk.card, border: `1px solid ${dk.border}` }}>
+            <div className="space-y-4">
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="flex items-center gap-4">
+                  <div className="w-20 h-4 rounded" style={{ backgroundColor: dk.surface }} />
+                  <div className="w-24 h-5 rounded-full" style={{ backgroundColor: dk.surface }} />
+                  <div className="w-24 h-5 rounded-full" style={{ backgroundColor: dk.surface }} />
+                  <div className="w-32 h-4 rounded" style={{ backgroundColor: dk.surface }} />
+                  <div className="ml-auto flex gap-1">
+                    <div className="w-20 h-7 rounded-md" style={{ backgroundColor: dk.surface }} />
+                    <div className="w-24 h-7 rounded-md" style={{ backgroundColor: dk.surface }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        {/* History toggle skeleton */}
+        <div className="flex items-center gap-2">
+          <div className="w-4 h-4 rounded" style={{ backgroundColor: dk.surface }} />
+          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: dk.surface }} />
+          <div className="w-28 h-5 rounded" style={{ backgroundColor: dk.surface }} />
+        </div>
       </div>
     );
   }
