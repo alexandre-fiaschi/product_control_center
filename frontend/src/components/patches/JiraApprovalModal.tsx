@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   X,
   Zap,
@@ -10,9 +11,11 @@ import {
   Check,
   CheckCircle2,
   Loader2,
+  File,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { PatchSummary, JiraApprovalPayload } from "../../lib/types";
+import { getPatchDetail } from "../../lib/api";
 import { dk, FIELD_OPTIONS, inputStyle, selectStyle } from "../../lib/constants";
 
 // ─── Props ──────────────────────────────────────────────────────────────────
@@ -147,6 +150,13 @@ export default function JiraApprovalModal({
   onClose,
   onSuccess,
 }: JiraApprovalModalProps) {
+  // Fetch patch detail for file list
+  const { data: detail } = useQuery({
+    queryKey: ["patchDetail", patch.product_id, patch.patch_id],
+    queryFn: () => getPatchDetail(patch.product_id, patch.patch_id),
+  });
+  const files = detail?.binaries.files ?? [];
+
   // Editable fields
   const [summary, setSummary] = useState(
     pipelineType === "binaries"
@@ -584,6 +594,24 @@ export default function JiraApprovalModal({
                 POST /rest/api/3/issue/&#123;key&#125;/attachments
               </div>
             </div>
+            {files.length > 0 && (
+              <div
+                className="mt-2 rounded-lg px-4 py-2.5"
+                style={{ backgroundColor: dk.surface, border: `1px solid ${dk.border}` }}
+              >
+                <div className="text-xs font-medium mb-1.5" style={{ color: dk.textDim }}>
+                  Contents ({files.length} file{files.length !== 1 ? "s" : ""})
+                </div>
+                <div className="space-y-1">
+                  {files.map((f) => (
+                    <div key={f} className="flex items-center gap-2 text-xs font-mono" style={{ color: dk.textMute }}>
+                      <File size={11} style={{ color: dk.textDim, flexShrink: 0 }} />
+                      {f}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* 5. Logic callout */}

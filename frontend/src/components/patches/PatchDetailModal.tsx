@@ -183,7 +183,7 @@ function PatchDetailModal({ patch, productName, onClose, onApprove }: PatchDetai
             </div>
 
             {/* Two-column timeline */}
-            <div className="grid grid-cols-2 gap-8" style={{ minHeight: 0, padding: "0 24px 10px", width: "100%" }}>
+            <div className="grid grid-cols-2 gap-8" style={{ minHeight: 0, padding: "0 24px 20px", width: "100%" }}>
               {/* ── Binaries column ──────────────────────────────── */}
               <div className="flex flex-col">
                 <div className="flex items-center gap-2 mb-6">
