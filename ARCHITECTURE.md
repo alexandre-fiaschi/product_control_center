@@ -443,13 +443,13 @@ SFTP is the first integration. Future integrations (Jira, email, PM tools) follo
 ### Phase 0 — MVP ← WE ARE HERE
 **Goal:** SFTP → discover → download binaries → approve → publish tracking
 
-- JSON state files on disk (no database)
-- SFTP integration (paramiko connector + scanner)
-- Binaries pipeline (fetch + verify)
-- Manual approval workflow via API/UI
-- Minimal React + Vite dashboard (products, patches, approve/publish)
-- Docker Compose (backend + frontend, no DB)
-- Docs pipeline stubbed (no DOC/ on SFTP yet)
+- ✅ JSON state files on disk (no database)
+- ✅ SFTP integration (paramiko connector + scanner)
+- ✅ Binaries pipeline (fetch + verify)
+- ✅ Manual approval workflow via API (10 endpoints, 121 tests)
+- ⬜ React + Vite dashboard (products, patches, approve/publish) — see `PLAN_FRONTEND.md`
+- ⬜ Docker Compose (backend + frontend, no DB)
+- ✅ Docs pipeline stubbed (no DOC/ on SFTP yet)
 
 ### Phase 1 — Docs Pipeline
 **Goal:** Convert raw release notes to branded CAE documents

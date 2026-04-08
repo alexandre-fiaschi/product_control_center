@@ -423,54 +423,78 @@ sonner (or react-hot-toast)     — toast notifications
 
 ## Implementation Order
 
-### Phase 1: Shell + Static UI
+### Block F1: Scaffold + Shared Code (small)
 1. Scaffold React app (`npm create vite@latest frontend -- --template react-ts`)
-2. Install Tailwind, lucide-react, recharts, @tanstack/react-query, sonner
-3. Create `lib/constants.ts` — extract `dk`, `STATUS_CONFIG`, `FIELD_OPTIONS` from mockup
-4. Create `lib/types.ts` — TypeScript types from FRONTEND_WORKFLOWS.md response shapes
-5. Create `lib/api.ts` — typed fetch wrapper (returns mock data initially)
-6. Build `App.tsx` with `Sidebar.tsx` + `Header.tsx` + view switching
-7. Build `StatusBadge.tsx`, `SummaryCard.tsx`, `Th.tsx`, `Td.tsx`
+2. Install deps: Tailwind, lucide-react, @tanstack/react-query, sonner
+3. Configure `vite.config.ts` — dev proxy `/api → localhost:8000`
+4. Create `lib/constants.ts` — extract `dk`, `STATUS_CONFIG`, `FIELD_OPTIONS`, `inputStyle`, `selectStyle` from mockup (lines 59–137)
+5. Create `lib/types.ts` — TypeScript types from FRONTEND_WORKFLOWS.md response shapes
+6. Create `lib/api.ts` — typed fetch wrapper with `ApiError` class for all 10 endpoints
 
-### Phase 2: Dashboard
-7. Build Dashboard page (`/`) — summary cards, pie chart, product cards, quick actionable table
-8. Wire to `lib/api.ts` with React Query
+### Block F2: Layout + Dashboard (medium)
+7. Build `App.tsx` — sidebar + view switching via `useState` (from mockup `currentView` pattern)
+8. Build `Sidebar.tsx` (mockup lines 558–619), `Header.tsx` — nav, scan button, last scan time
+9. Build shared components: `StatusBadge.tsx` (mockup lines 79–88), `SummaryCard.tsx` (lines 918–924), `Th.tsx` (lines 904–909), `Td.tsx` (lines 911–916)
+10. Build `Dashboard.tsx` (mockup lines 643–745) — summary cards, product cards, quick actionable table
+11. Wire to `lib/api.ts` with React Query
 
-### Phase 3: Pipeline View
-9. Build Pipeline page (`/pipeline`) — filter bar, actionable table, history table
-10. Build `PatchTable.tsx` — shared table component used by both views
+### Block F3: Pipeline View (medium)
+12. Build `Pipeline.tsx` (mockup lines 748–886) — filter bar (search, product dropdown, status dropdown), actionable table, collapsible history table
+13. Build `PatchTable.tsx` — reusable table component with status badges + action buttons
+14. Wire filter logic from mockup `filteredActionable`/`filteredHistory`
 
-### Phase 4: Modals
-11. Build `PatchDetailModal.tsx` — timeline view with approve buttons
-12. Build `JiraApprovalModal.tsx` — full Jira form with editable fields
-13. Wire approve actions → POST to backend → toast → refetch
+### Block F4: Modals + Actions (large — core interaction)
+15. Build `PatchDetailModal.tsx` (mockup lines 402–506) — two-column timeline view, `TimelineStep` subcomponent, approve buttons
+16. Build `JiraApprovalModal.tsx` (mockup lines 141–363) — full Jira form with:
+    - Fixed fields: `FieldRowStatic` (project, issue type, release approval)
+    - Editable fields: `EditFieldRow` (summary, client, environment, product name, release name, release type, create/update/remove)
+    - Description textarea with auto-recompute on field changes (`useEffect`)
+    - Attachment preview, new/existing folder logic callout
+    - "Already available on portal" toggle
+    - "Modified" indicators on changed fields
+    - Blue header for binaries, purple for docs
+17. Wire approve actions → POST to backend → spinner in modal → toast → refetch via query invalidation
 
-### Phase 5: Polish
-14. Add loading skeletons, error banners, empty states
-15. Add toast notifications (scan results, approve success/error)
-16. Test full flow: scan → view patches → approve → see Jira link
-17. Responsive tweaks (not critical — internal tool on a Mac)
+### Block F5: Polish (small)
+18. Add loading skeletons for dashboard cards and table rows
+19. Add error banners (API unreachable, scan failures)
+20. Add empty states ("No patches found. Run a scan to discover patches.")
+21. Add toast notifications: scan results, approve success with clickable Jira link, error toasts that persist until dismissed
+
+### Block F6: Testing (medium)
+
+**Component tests (Vitest + React Testing Library):**
+- `StatusBadge.test.tsx` — renders correct color/label for each of 8 statuses
+- `PatchTable.test.tsx` — filters by search/product/status, empty states, actionable vs history split
+- `JiraApprovalModal.test.tsx` — field defaults, new/existing folder logic, modified indicators, toggle behavior, description recompute
+- `PatchDetailModal.test.tsx` — timeline steps render correctly, approve buttons shown for pending patches
+- `api.test.ts` — ApiError class, error handling, network error fallback
+
+**End-to-end tests (Playwright):**
+- Full scan flow: click Scan SFTP → spinner → toast → new patches appear in table
+- Approve without Jira: open modal → toggle "Already on portal" → click publish → row updates to published
+- Approve with Jira: open modal → review fields → submit → spinner → success toast with Jira link
+- Error handling: stop backend → error banner → restart → data loads
+- Modal interactions: open patch detail → click approve → Jira modal opens → cancel → back to detail
+- Filter interactions: search by patch ID, filter by product, filter by status
+
+**Dependencies:**
+```
+vitest, @testing-library/react, @testing-library/jest-dom   # component tests
+@playwright/test                                              # E2E tests
+```
+
+**Commands:**
+```bash
+cd frontend && npm test                    # component tests (vitest)
+cd frontend && npx playwright test         # E2E tests (requires backend running)
+```
 
 ---
 
-## What the backend must provide
+## Backend Status
 
-The frontend assumes these 10 endpoints exist and return the exact shapes from `FRONTEND_WORKFLOWS.md`:
-
-| Priority | Endpoint | Needed for |
-|----------|----------|------------|
-| 1 | `GET /api/dashboard/summary` | Dashboard page |
-| 1 | `GET /api/patches` | Pipeline view |
-| 1 | `GET /api/patches/{product_id}` | Pipeline view (filtered) |
-| 2 | `GET /api/products` | Dashboard product cards |
-| 2 | `GET /api/patches/{product_id}/{patch_id}` | Patch detail modal |
-| 3 | `POST /api/pipeline/scan` | Scan button |
-| 3 | `POST /api/pipeline/scan/{product_id}` | Scan single product |
-| 3 | `POST /api/patches/.../binaries/approve` | Approve binaries |
-| 3 | `POST /api/patches/.../docs/approve` | Approve docs |
-| 4 | `GET /api/products/{product_id}` | Product detail (future) |
-
-Priority 1-2 endpoints are needed for the UI to render anything. Priority 3 are needed for actions. Priority 4 can wait.
+All 10 API endpoints are built and tested (121 backend tests passing). The frontend can be developed against the live backend at `localhost:8000`. Swagger docs at `localhost:8000/docs`.
 
 ---
 
@@ -478,12 +502,11 @@ Priority 1-2 endpoints are needed for the UI to render anything. Priority 3 are 
 
 ### Manual test checklist
 
-Since this is an internal tool for one user, the priority is manual end-to-end testing over automated tests. Run through this checklist after each major change:
+Run through this after each block:
 
 **Dashboard:**
 - [ ] Page loads with real data from backend
 - [ ] Summary cards show correct counts matching state files
-- [ ] Pie chart renders Pending vs Published
 - [ ] Product cards show correct per-product counts
 - [ ] Clicking a product card navigates to pipeline with that product filtered
 - [ ] "Scan SFTP" button shows spinner, then toast with result
@@ -518,15 +541,6 @@ Since this is an internal tool for one user, the priority is manual end-to-end t
 - [ ] Trigger Jira 401 → toast shows "API token may have expired"
 - [ ] Scan with SFTP unreachable → toast shows SFTP error detail
 
-### Automated tests (if needed later)
+### Automated tests (Block F6)
 
-```
-frontend/src/__tests__/
-├── api.test.ts                 # API client error handling, ApiError class
-├── StatusBadge.test.tsx        # Renders correct color/label for each status
-├── JiraApprovalModal.test.tsx  # Field defaults, new/existing logic, modified tracking
-└── PatchTable.test.tsx         # Filters, sorting, empty states
-```
-
-Dependencies: `vitest` + `@testing-library/react`.
-Not required for MVP — add when the app stabilizes.
+See Block F6 in Implementation Order above for full details on component tests (Vitest) and E2E tests (Playwright).
