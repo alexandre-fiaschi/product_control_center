@@ -447,7 +447,7 @@ SFTP is the first integration. Future integrations (Jira, email, PM tools) follo
 - ✅ SFTP integration (paramiko connector + scanner)
 - ✅ Binaries pipeline (fetch + verify)
 - ✅ Manual approval workflow via API (10 endpoints, 121 tests)
-- ⬜ React + Vite dashboard (products, patches, approve/publish) — see `PLAN_FRONTEND.md`
+- 🔨 React + Vite dashboard — F2 (layout + dashboard) complete, F3–F6 remaining — see `PLAN_FRONTEND.md`
 - ⬜ Docker Compose (backend + frontend, no DB)
 - ✅ Docs pipeline stubbed (no DOC/ on SFTP yet)
 

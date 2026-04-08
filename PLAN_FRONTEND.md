@@ -116,36 +116,37 @@ A fully functional React mockup already exists (`product-control-center-mockup.j
 
 ```
 frontend/src/
-├── App.tsx                           # Root — sidebar + view switching (useState)
+├── App.tsx                           # Root — BrowserRouter + Routes + Toaster
 ├── main.tsx                          # Entry point, React Query provider
 │
 ├── views/
-│   ├── Dashboard.tsx                 # Dashboard view (from mockup lines 643–745)
+│   ├── Dashboard.tsx                 # ✅ Dashboard view (from mockup lines 643–745)
 │   └── Pipeline.tsx                  # Pipeline view (from mockup lines 748–886)
 │
 ├── components/
 │   ├── layout/
-│   │   ├── Sidebar.tsx               # Sidebar nav (from mockup lines 558–619)
-│   │   └── Header.tsx                # Top bar with Scan button + last scan time
+│   │   ├── Sidebar.tsx               # ✅ NavLink nav (from mockup lines 558–619)
+│   │   ├── Header.tsx                # ✅ Top bar with Scan button + last scan time
+│   │   └── AppLayout.tsx             # ✅ Shell: Sidebar + Header + Outlet, scan mutation
 │   │
 │   ├── patches/
-│   │   ├── StatusBadge.tsx           # Status dot + label (from mockup lines 79–88)
 │   │   ├── PatchTable.tsx            # Reusable table for actionable + history
 │   │   ├── PatchDetailModal.tsx      # Timeline view (from mockup lines 402–506)
 │   │   └── JiraApprovalModal.tsx     # Full Jira form (from mockup lines 141–363)
 │   │
 │   └── shared/
-│       ├── SummaryCard.tsx           # Stat card (from mockup lines 918–924)
-│       ├── Th.tsx                    # Table header cell (from mockup lines 904–909)
-│       └── Td.tsx                    # Table data cell (from mockup lines 911–916)
+│       ├── StatusBadge.tsx           # ✅ Status dot + label (from mockup lines 79–88)
+│       ├── SummaryCard.tsx           # ✅ Stat card (from mockup lines 918–924)
+│       ├── Th.tsx                    # ✅ Table header cell (from mockup lines 904–909)
+│       └── Td.tsx                    # ✅ Table data cell (from mockup lines 911–916)
 │
 └── lib/
-    ├── api.ts                        # Typed fetch wrapper
-    ├── types.ts                      # TypeScript types
-    └── constants.ts                  # Theme tokens + status config
+    ├── api.ts                        # ✅ Typed fetch wrapper
+    ├── types.ts                      # ✅ TypeScript types
+    └── constants.ts                  # ✅ Theme tokens + status config + date formatters
 ```
 
-**No file-based routing.** Views switch via `useState` in `App.tsx` (same pattern as the mockup's `currentView`). Two views, not enough pages to justify a router.
+**Routing:** `react-router-dom` with `BrowserRouter`. Routes: `/` (Dashboard), `/pipeline` (Pipeline). `AppLayout` is a layout route wrapping all views with `<Outlet />`. Components use `useNavigate()` / `NavLink` directly — no callback prop threading.
 
 ---
 
@@ -415,8 +416,9 @@ vite, @vitejs/plugin-react      — build tool
 tailwindcss, postcss            — styling
 lucide-react                    — icons (already used in mockup)
 recharts                        — pie chart (already used in mockup)
+react-router-dom                — client-side routing (/ and /pipeline)
 @tanstack/react-query           — server state / data fetching
-sonner (or react-hot-toast)     — toast notifications
+sonner                          — toast notifications
 ```
 
 ---
@@ -431,12 +433,12 @@ sonner (or react-hot-toast)     — toast notifications
 5. Create `lib/types.ts` — TypeScript types from FRONTEND_WORKFLOWS.md response shapes
 6. Create `lib/api.ts` — typed fetch wrapper with `ApiError` class for all 10 endpoints
 
-### Block F2: Layout + Dashboard (medium)
-7. Build `App.tsx` — sidebar + view switching via `useState` (from mockup `currentView` pattern)
-8. Build `Sidebar.tsx` (mockup lines 558–619), `Header.tsx` — nav, scan button, last scan time
-9. Build shared components: `StatusBadge.tsx` (mockup lines 79–88), `SummaryCard.tsx` (lines 918–924), `Th.tsx` (lines 904–909), `Td.tsx` (lines 911–916)
-10. Build `Dashboard.tsx` (mockup lines 643–745) — summary cards, product cards, quick actionable table
-11. Wire to `lib/api.ts` with React Query
+### Block F2: Layout + Dashboard (medium) ✅
+7. ✅ Built `App.tsx` — `BrowserRouter` + `Routes` (`/` → Dashboard, `/pipeline` → placeholder)
+8. ✅ Built `Sidebar.tsx` (NavLink nav), `Header.tsx` (scan button), `AppLayout.tsx` (shell with scan mutation + Outlet)
+9. ✅ Built shared components: `StatusBadge.tsx`, `SummaryCard.tsx`, `Th.tsx`, `Td.tsx`
+10. ✅ Built `Dashboard.tsx` — summary card, tracked products card, quick actionable table (top 5)
+11. ✅ Wired to `lib/api.ts` with React Query (getDashboardSummary + getPatches)
 
 ### Block F3: Pipeline View (medium)
 12. Build `Pipeline.tsx` (mockup lines 748–886) — filter bar (search, product dropdown, status dropdown), actionable table, collapsible history table

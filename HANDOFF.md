@@ -74,20 +74,21 @@ frontend/
 │       └── api.ts              # Typed fetch wrapper + ApiError class
 ```
 
-### Block F2: Layout + Dashboard (medium)
+### Block F2: Layout + Dashboard (medium) ✅
 
-App shell with sidebar + view switching, dashboard with summary cards and product cards.
+App shell with sidebar + react-router-dom view switching, dashboard with summary cards, product cards, and actionable table.
 
-**Files to create:**
+**Files created:**
 ```
 frontend/src/
-├── App.tsx                     # Sidebar + view switching (useState)
+├── App.tsx                     # BrowserRouter + Routes (/ and /pipeline)
 ├── views/
 │   └── Dashboard.tsx           # Summary cards, product cards, quick actionable table
 └── components/
     ├── layout/
-    │   ├── Sidebar.tsx         # Nav (mockup lines 558–619)
-    │   └── Header.tsx          # Scan button + last scan time
+    │   ├── Sidebar.tsx         # NavLink nav (mockup lines 558–619)
+    │   ├── Header.tsx          # Scan button + last scan time
+    │   └── AppLayout.tsx       # Shell: Sidebar + Header + Outlet, scan mutation
     └── shared/
         ├── StatusBadge.tsx     # Status dot + label (mockup lines 79–88)
         ├── SummaryCard.tsx     # Stat card (mockup lines 918–924)
@@ -147,7 +148,7 @@ cd frontend && npx playwright test         # E2E tests
 | Block | What | Size | Depends on | Status |
 |-------|------|------|------------|--------|
 | F1 | Scaffold + Shared Code | Small | Backend complete | ✅ Done |
-| F2 | Layout + Dashboard | Medium | F1 | |
+| F2 | Layout + Dashboard | Medium | F1 | ✅ Done |
 | F3 | Pipeline View | Medium | F2 | |
 | F4 | Modals + Actions | Large | F3 | |
 | F5 | Polish | Small | F4 | |
