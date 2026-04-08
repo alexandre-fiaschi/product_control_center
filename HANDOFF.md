@@ -20,9 +20,9 @@ Field IDs, values, and templates are all in `config/pipeline.json`. Workflows an
 
 ## Known Issues — To Fix During Build
 
-1. **State model inconsistency** — `test_sftp.py` uses flat `patch['status']`, but tracker JSONs use nested `binaries.status` / `release_notes.status`. **Fix:** Use tracker JSON structure as source of truth when building backend modules.
+1. ~~**State model inconsistency**~~ — **Fixed in Block 2.** Scanner uses nested Pydantic models (binaries + release_notes), not the flat script model.
 
-2. **State writes not atomic** — Scripts use plain `json.dump()`. **Fix:** Implement write-to-`.tmp`-then-rename in `backend/app/state/manager.py`.
+2. ~~**State writes not atomic**~~ — **Fixed in Block 1.** `save_tracker()` uses `.tmp` → `os.replace()` + `fcntl` locking.
 
 3. **Mockup uses hardcoded data** — Real state is 31 pending binaries, 0 published. Mockup is design reference only — frontend fetches from API.
 
@@ -67,77 +67,27 @@ Each block is scoped so an agent can implement it in one session with full conte
 
 ---
 
-### Block 2: SFTP Integration (connector + scanner + parsers)
+### Block 2: SFTP Integration (connector + scanner + parsers) — DONE
 
-**Goal:** Extract all SFTP logic from `scripts/test_sftp.py` into proper modules. After this block, the backend can connect to SFTP, discover patches for all 3 products, normalize folder names, and update tracker state.
+**Status:** Complete — 38 new tests passing (83 total).
 
-**Files to create:**
-
-```
-backend/app/integrations/sftp/
-├── __init__.py
-├── connector.py           # SFTPConnector class
-├── product_parsers.py     # normalize_patch_id(), version parsing, track_from filtering
-└── scanner.py             # discover_patches() per product
-
-backend/tests/
-├── test_product_parsers.py
-├── test_scanner.py            # Unit tests with mocked SFTP
-└── test_sftp_connection.py    # Integration test (hits real SFTP, run manually)
-```
-
-**What to extract:**
-
-- **`connector.py`** — from `test_sftp.py` lines 33–41: `SFTPConnector` class with context manager, uses config from Block 1. `list_dirs(path)` method from lines 44–51.
-- **`product_parsers.py`** — from `test_sftp.py` lines 57–121: `normalize_patch_id()`, `version_from_patch_id()`, `parse_track_from()`, all per-product parsing functions.
-- **`scanner.py`** — from `test_sftp.py` lines 126–182: `discover_patches()`, `update_tracker()`. **IMPORTANT:** Must create patches with the **nested** state model (binaries + release_notes sub-objects), NOT the flat model from the script.
-
-**Logging:** `sftp.connector` — INFO for open/close, ERROR for connection failures, DEBUG for directory listings. `sftp.scanner` — INFO for scan start/results, WARNING for skipped duplicates, DEBUG for normalization.
-
-**Tests:**
-- `test_product_parsers.py` (unit): all normalize cases (v8.1.0.0→8.1.0.0, 8_0_28_1→8.0.28.1, 7_3_27_7→7.3.27.7, garbage→None), version_from_patch_id, parse_track_from
-- `test_scanner.py` (unit, mocked SFTP): update_tracker creates nested structure, idempotent, respects track_from
-- `test_sftp_connection.py` (integration, `@pytest.mark.integration` — skipped by default)
-
-**Verify:** `cd backend && pytest tests/ -v -k "not integration"`
+**What was built:**
+- `backend/app/integrations/sftp/connector.py` — `SFTPConnector` context manager (paramiko), `list_dirs()` with `stat.S_ISDIR` filter
+- `backend/app/integrations/sftp/product_parsers.py` — `normalize_patch_id()`, `version_from_patch_id()`, `parse_track_from()`, per-product parse functions (v81/v80/v73)
+- `backend/app/integrations/sftp/scanner.py` — `discover_patches()` dispatcher, `discover_v81/v80/v73()`, `update_tracker()` using nested Pydantic models (binaries + release_notes)
+- `backend/tests/test_product_parsers.py` (21 tests), `test_scanner.py` (12 tests), `test_sftp_connection.py` (integration, skipped by default)
 
 ---
 
-### Block 3: Jira Integration (client + ticket builder + attachment)
+### Block 3: Jira Integration (client + ticket builder + attachment) — DONE
 
-**Goal:** Extract all Jira logic from `scripts/test_jira.py` and `scripts/create_jira_ticket.py` into proper modules. After this block, the backend can authenticate with Jira, search by JQL, create tickets, and upload attachments.
+**Status:** Complete — 28 new tests passing (83 total).
 
-**Files to create:**
-
-```
-backend/app/integrations/jira/
-├── __init__.py
-├── client.py              # JiraClient class (requests + Basic Auth)
-├── ticket_builder.py      # Build Jira payloads from patch state
-└── attachment.py          # Zip folder + upload to Jira ticket
-
-backend/tests/
-├── test_jira_client.py        # Unit tests with mocked HTTP
-├── test_ticket_builder.py     # Payload construction tests
-├── test_attachment.py         # Zip creation tests
-└── test_jira_connection.py    # Integration test (hits real Jira, run manually)
-```
-
-**What to extract:**
-
-- **`client.py`** — `JiraClient` class: `search_jql()` → POST to `/rest/api/3/search/jql` (NOT old `/search`), `create_issue()`, `add_attachment()` with `X-Atlassian-Token: no-check` header.
-- **`ticket_builder.py`** — `text_to_adf()`, `build_binaries_payload()`, `build_docs_payload()`. All 10 required fields from the Jira reference section above.
-- **`attachment.py`** — `zip_patch_folder(local_path, patch_id)` → creates `{patch_id}.zip`.
-
-**Logging:** `jira.client` — INFO for search results/ticket creation/uploads, WARNING for unexpected status codes, ERROR for failures, DEBUG for request/response details.
-
-**Tests:**
-- `test_jira_client.py` (unit, mocked HTTP): successful create → key+url, 401 → auth error, 400 → field error, correct endpoint used
-- `test_ticket_builder.py` (unit): ADF structure, new/existing folder logic, all 10 fields present, summary template
-- `test_attachment.py` (unit): zip created at correct path, contains correct files, handles empty folder
-- `test_jira_connection.py` (integration, `@pytest.mark.integration`)
-
-**Verify:** `cd backend && pytest tests/ -v -k "not integration"`
+**What was built:**
+- `backend/app/integrations/jira/client.py` — `JiraClient` class with `search_jql()` (POST `/search/jql`), `create_issue()`, `add_attachment()` (`X-Atlassian-Token: no-check`), `get_myself()`; `JiraError` exception
+- `backend/app/integrations/jira/ticket_builder.py` — `text_to_adf()`, `build_binaries_payload()`, `build_docs_payload()` — reads all 10 field IDs/values dynamically from `pipeline.json`
+- `backend/app/integrations/jira/attachment.py` — `zip_patch_folder()` (in-memory zip), `upload_attachment()`
+- `backend/tests/test_jira_client.py` (10 tests), `test_ticket_builder.py` (10 tests), `test_attachment.py` (3 tests), `test_jira_connection.py` (integration, skipped by default)
 
 ---
 
@@ -242,8 +192,8 @@ curl http://localhost:8000/api/dashboard/summary
 | Block | What | Depends on | Status |
 |-------|------|------------|--------|
 | 1 | Scaffold + Config + State + Models | Nothing | **DONE** |
-| 2 | SFTP Integration | Block 1 |
-| 3 | Jira Integration | Block 1 |
+| 2 | SFTP Integration | Block 1 | **DONE** |
+| 3 | Jira Integration | Block 1 | **DONE** |
 | 4 | Services + Pipeline Stubs | Blocks 1, 2, 3 |
 | 5 | FastAPI App + API Endpoints | Block 4 |
 
