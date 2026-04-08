@@ -41,13 +41,26 @@ Each patch tracks **binaries** and **release notes** independently (separate Jir
 
 ```
 OpsCommDocsPipeline/
-├── config/pipeline.json          # Products, lifecycle, Jira fields, portal settings
-├── state/patches/*.json          # Tracker files — source of truth for state model
-├── scripts/                      # Original SFTP/Jira scripts (reference for extraction)
+├── backend/
+│   ├── app/
+│   │   ├── config.py              # Pydantic Settings: .env + pipeline.json
+│   │   ├── logging_config.py      # Stdout + rotating file logger
+│   │   ├── state/
+│   │   │   ├── models.py          # Pydantic models (ProductTracker, PatchEntry, etc.)
+│   │   │   └── manager.py         # load_tracker(), save_tracker() — atomic writes
+│   │   ├── api/                   # (Block 5)
+│   │   ├── services/              # (Block 4)
+│   │   ├── pipelines/             # (Block 4)
+│   │   └── integrations/          # (Blocks 2 + 3)
+│   ├── tests/                     # pytest — 17 tests passing
+│   └── requirements.txt
+├── config/pipeline.json           # Products, lifecycle, Jira fields, portal settings
+├── state/patches/*.json           # Tracker files — source of truth for state model
+├── scripts/                       # Original SFTP/Jira scripts (reference for extraction)
 ├── product-control-center-mockup.jsx  # React UI mockup (design reference)
-├── patches/                      # Downloaded patch files
-├── templates/                    # CAE doc template (future)
-└── .env                          # SFTP + Jira credentials (never commit)
+├── patches/                       # Downloaded patch files
+├── templates/                     # CAE doc template (future)
+└── .env                           # SFTP + Jira credentials (never commit)
 ```
 
 ## Key Documents — Read These

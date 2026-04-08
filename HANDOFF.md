@@ -54,50 +54,16 @@ Each block is scoped so an agent can implement it in one session with full conte
 
 ---
 
-### Block 1: Scaffold + Config + State + Models
+### Block 1: Scaffold + Config + State + Models — DONE
 
-**Goal:** Create the backend folder structure, config loading, state management, and Pydantic models. After this block, the backend can load `.env`, read `pipeline.json`, and read/write tracker JSON files with atomic saves.
+**Status:** Complete — 17/17 tests passing.
 
-**Files to create:**
-
-```
-backend/
-├── app/
-│   ├── __init__.py
-│   ├── config.py                  # Pydantic Settings: loads .env + pipeline.json
-│   ├── logging_config.py          # Logging setup: stdout + rotating file
-│   ├── state/
-│   │   ├── __init__.py
-│   │   ├── models.py              # Pydantic models matching state/patches/*.json
-│   │   └── manager.py             # load_tracker(), save_tracker() with atomic writes
-│   ├── api/__init__.py            # Empty — needed for block 2+
-│   ├── services/__init__.py
-│   ├── pipelines/__init__.py
-│   └── integrations/__init__.py
-├── tests/
-│   ├── __init__.py
-│   ├── conftest.py                # Shared fixtures (tmp dirs, sample trackers)
-│   ├── test_config.py
-│   ├── test_models.py
-│   └── test_state_manager.py
-└── requirements.txt
-```
-
-**What to build:**
-
-- **`config.py`** — Pydantic Settings: loads `.env` (SFTP_HOST, SFTP_PORT, SFTP_USERNAME, SFTP_PASSWORD, SFTP_KEY_PATH, JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN_NO_SCOPES) + loads `config/pipeline.json` at startup. Resolves paths relative to project root (one level up from `backend/`).
-- **`logging_config.py`** — Format: `[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s`. Stdout + rotating file (`logs/pipeline.log`, 5MB, 5 backups).
-- **`state/models.py`** — Pydantic models matching **actual tracker JSON files** (not the scripts): `BinariesState`, `ReleaseNotesState`, `PatchEntry`, `VersionData`, `ProductTracker`.
-- **`state/manager.py`** — Extract from `scripts/test_sftp.py` lines 187–204, then improve: `load_tracker(product_id)`, `save_tracker(tracker)` with atomic write (`.tmp` → rename), file locking with `fcntl`.
-
-**Logging:** `state.manager` logger — INFO for load/save, ERROR for failures, WARNING for missing tracker files.
-
-**Tests:**
-- `test_config.py`: config loads with valid .env, missing vars raise errors
-- `test_models.py`: validate PatchEntry against real tracker JSON, reject invalid statuses, optional fields default to null
-- `test_state_manager.py`: load existing → correct structure; load missing → empty tracker; save + reload round-trips; atomic write uses .tmp then rename
-
-**Verify:** `cd backend && pip install -r requirements.txt && pytest tests/ -v`
+**What was built:**
+- `backend/app/config.py` — Pydantic Settings: loads `.env` + `config/pipeline.json`, exposes `state_dir` / `patches_dir` path properties
+- `backend/app/logging_config.py` — stdout + rotating file handler (`logs/pipeline.log`, 5MB, 5 backups)
+- `backend/app/state/models.py` — `BinariesState`, `ReleaseNotesState`, `PatchEntry`, `VersionData`, `ProductTracker` matching real tracker JSON shape
+- `backend/app/state/manager.py` — `load_tracker()` / `save_tracker()` with atomic `.tmp` → `os.replace()` + `fcntl` file locking
+- `backend/tests/` — conftest fixtures, test_config (4), test_models (7), test_state_manager (6)
 
 ---
 
@@ -273,9 +239,9 @@ curl http://localhost:8000/api/dashboard/summary
 
 ## Block Summary
 
-| Block | What | Depends on |
-|-------|------|------------|
-| 1 | Scaffold + Config + State + Models | Nothing |
+| Block | What | Depends on | Status |
+|-------|------|------------|--------|
+| 1 | Scaffold + Config + State + Models | Nothing | **DONE** |
 | 2 | SFTP Integration | Block 1 |
 | 3 | Jira Integration | Block 1 |
 | 4 | Services + Pipeline Stubs | Blocks 1, 2, 3 |
