@@ -235,6 +235,14 @@ const JiraApprovalModal = ({ patch, onClose, pipelineType }) => {
               <span className="ml-2 normal-case tracking-normal font-normal" style={{ color: dk.accent, opacity: 0.8 }}>— modify before submitting</span>
             </h3>
             <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${dk.border}` }}>
+              {/* Create / Update / Remove — dropdown (highlighted, FIRST) */}
+              <EditFieldRow label="Create / Update / Remove" fieldId="customfield_10618" touched={touched.createUpdate} highlight>
+                <select value={createUpdate} onChange={(e) => { setCreateUpdate(e.target.value); markTouched("createUpdate"); }}
+                  className={inputFocusRing} style={{ ...selectStyle, color: "#60a5fa", fontWeight: 600 }}>
+                  {FIELD_OPTIONS.createUpdateRemove.map((o) => <option key={o} value={o}>{o}</option>)}
+                </select>
+              </EditFieldRow>
+
               {/* Summary — text input */}
               <EditFieldRow label="Summary" fieldId="summary" touched={touched.summary}>
                 <input type="text" value={summary} onChange={(e) => { setSummary(e.target.value); markTouched("summary"); }}
@@ -274,14 +282,6 @@ const JiraApprovalModal = ({ patch, onClose, pipelineType }) => {
                 <select value={releaseType} onChange={(e) => { setReleaseType(e.target.value); markTouched("releaseType"); }}
                   className={inputFocusRing} style={selectStyle}>
                   {FIELD_OPTIONS.releaseType.map((o) => <option key={o} value={o}>{o}</option>)}
-                </select>
-              </EditFieldRow>
-
-              {/* Create / Update / Remove — dropdown (highlighted) */}
-              <EditFieldRow label="Create / Update / Remove" fieldId="customfield_10618" touched={touched.createUpdate} highlight>
-                <select value={createUpdate} onChange={(e) => { setCreateUpdate(e.target.value); markTouched("createUpdate"); }}
-                  className={inputFocusRing} style={{ ...selectStyle, color: "#60a5fa", fontWeight: 600 }}>
-                  {FIELD_OPTIONS.createUpdateRemove.map((o) => <option key={o} value={o}>{o}</option>)}
                 </select>
               </EditFieldRow>
             </div>
@@ -584,16 +584,13 @@ export default function ProductControlCenter() {
       {/* ─── SIDEBAR ───────────────────────────────────── */}
       <aside className={`${sidebarCollapsed ? "w-16" : "w-64"} flex flex-col transition-all duration-200`}
         style={{ backgroundColor: "#0b0d12", borderRight: `1px solid ${dk.border}` }}>
-        <div className="px-4 py-5 flex items-center gap-3" style={{ borderBottom: `1px solid ${dk.border}` }}>
+        <div className="px-4 flex items-center gap-3" style={{ borderBottom: `1px solid ${dk.border}`, height: 65 }}>
           <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
             style={{ background: "linear-gradient(135deg,#2563eb,#1d4ed8)" }}>
             <Activity size={18} className="text-white" />
           </div>
           {!sidebarCollapsed && (
-            <div>
-              <div className="text-sm font-bold leading-tight" style={{ color: dk.text }}>Product Control</div>
-              <div className="text-xs" style={{ color: dk.textDim }}>Center</div>
-            </div>
+            <span className="text-sm font-bold" style={{ color: dk.text }}>OpsComm Control Center</span>
           )}
         </div>
 
@@ -647,8 +644,8 @@ export default function ProductControlCenter() {
       {/* ─── MAIN CONTENT ──────────────────────────────── */}
       <main className="flex-1 overflow-y-auto">
         {/* Top bar */}
-        <header className="px-6 py-4 flex items-center justify-between sticky top-0 z-10"
-          style={{ backgroundColor: dk.surface, borderBottom: `1px solid ${dk.border}` }}>
+        <header className="px-6 flex items-center justify-between sticky top-0 z-10"
+          style={{ backgroundColor: dk.surface, borderBottom: `1px solid ${dk.border}`, height: 65 }}>
           <div>
             <h1 className="text-xl font-bold" style={{ color: dk.text }}>
               {currentView === "dashboard" ? "Dashboard" : "Documentation Pipeline"}
