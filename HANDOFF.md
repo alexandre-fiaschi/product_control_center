@@ -5,78 +5,16 @@
 
 ---
 
-## Jira Integration Reference
+## Jira Gotchas
 
-### Auth
+Field IDs, values, and templates are all in `config/pipeline.json`. Workflows and JQL logic are in `ARCHITECTURE.md`. Below are only the non-obvious traps:
 
-- **Method:** Basic Auth (email + classic API token) against `https://caeglobal.atlassian.net`
-- **Credentials in `.env`:** `JIRA_EMAIL`, `JIRA_API_TOKEN_NO_SCOPES`
-- Scoped tokens do NOT work for this instance — use the classic token only
-- CAPTCHA can be triggered after failed login attempts, temporarily blocking API auth
-- Token expiration: check at https://id.atlassian.com/manage-profile/security/api-tokens
-
-### Project & Issue Type
-
-- Project key: **`CFSSOCP`** (id=10008, `CFS-ServiceOps-CommPortal`)
-- Issue type: **"Release notes, documents & binaries"** (id=`10163`)
-- Same issue type for both binaries AND docs (different field values)
-
-### Required Fields
-
-| Field | Field ID | Type | Value (Binaries Pipeline) |
-|-------|----------|------|---------------------------|
-| Project | `project` | project | `{"key": "CFSSOCP"}` |
-| Issue Type | `issuetype` | issuetype | `{"id": "10163"}` |
-| Summary | `summary` | string | `"Add Release Version {patch_id}"` |
-| Client | `customfield_10328` | array | `[{"value": "Flightscape"}]` |
-| Environment | `customfield_10538` | option | `{"value": "All the three"}` |
-| Product Name | `customfield_10562` | string | `"CAE® Operations Communication Manager"` |
-| Release Name | `customfield_10563` | string | `"Version {major.minor.patch}"` (e.g., "Version 8.1.11") |
-| Release Type | `customfield_10616` | option | `{"value": "Version"}` |
-| Release Approval | `customfield_10617` | option | `{"value": "Users should not request approval to access or download files on this release"}` |
-| Create/Update/Remove | `customfield_10618` | option | `"New CAE Portal Release"` or `"Existing CAE Portal Release"` |
-
-Optional: **Description** (ADF format), **Attachment** (zip uploaded after ticket creation).
-
-### Description Template
-
-```
-Hi Team,
-
-I have this binaries for the release {version} that should all be added in a [new/existing] folder '{Release Name}'.
-
-Please contact me for any questions you may have.
-
-Thank you very much,
-```
-
-### Attachment Workflow
-
-1. Zip binaries as `{patch_id}.zip` (e.g., `8.1.11.0.zip`) — always full patch ID
-2. Upload via `POST /rest/api/3/issue/{ticket_key}/attachments`
-3. Header: `X-Atlassian-Token: no-check`
-4. Content-Type: `multipart/form-data`
-
-### Jira API Endpoints
-
-| Action | Method | Endpoint | Notes |
-|--------|--------|----------|-------|
-| Auth test | GET | `/rest/api/3/myself` | |
-| Create issue | POST | `/rest/api/3/issue` | |
-| Get issue | GET | `/rest/api/3/issue/{key}` | |
-| Add attachment | POST | `/rest/api/3/issue/{key}/attachments` | |
-| Search (JQL) | POST | `/rest/api/3/search/jql` | Old `/search` returns 410 |
-| Delete issue | DELETE | `/rest/api/3/issue/{key}` | 403 — no permission |
-
-All endpoints use Basic Auth: `email:classic_api_token`.
-
-**JQL for new/existing detection:** `project = CFSSOCP AND cf[10563] = "Version {version}"` (exact match, not `~` contains).
-
-### Constraints
-
-- Delete via API not available (403) — must delete tickets manually
-- Docs pipeline may use different Release Type values (not always "Version") — binaries-specific for now
-- Token has full account permissions — never commit `.env`
+- **Scoped tokens don't work** — only classic API tokens work for this Jira instance. Credential in `.env`: `JIRA_API_TOKEN_NO_SCOPES`
+- **Old search endpoint removed** — `POST /rest/api/3/search` returns 410. Use `POST /rest/api/3/search/jql` instead
+- **JQL must use exact match** — `cf[10563] = "Version {version}"` not `~` (contains). Using `~` causes false matches (e.g., 8.1.1 matches 8.1.11)
+- **Delete via API is 403** — test tickets must be deleted manually from the Jira board
+- **Attachment uploaded after ticket creation** — not at creation time. Requires `X-Atlassian-Token: no-check` header
+- **CAPTCHA risk** — failed login attempts can trigger CAPTCHA, temporarily blocking API auth
 
 ---
 

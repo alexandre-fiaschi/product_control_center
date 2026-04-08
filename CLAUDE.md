@@ -5,112 +5,67 @@
 Automate the ingestion of software releases from an SFTP server for the OpsComm / ACARS product family. The pipeline scans for new patches, downloads them, and presents them for manual approval before publishing to the CAE community portal. This is the first module of a larger Product Control Center platform.
 
 **Current phase:** MVP (Phase 0) — SFTP discovery + download + manual approval via API/UI.
-**Future:** docs conversion, Jira automation, email triggers, pluggable pipeline architecture.
 
 ## Tech Stack
 
-- **Backend:** Python + FastAPI (not yet built)
-- **Frontend:** React + Vite + Tailwind (not yet built — mockup exists as `product-control-center-mockup.jsx`)
+- **Backend:** Python + FastAPI
+- **Frontend:** React + Vite + Tailwind
 - **State:** JSON files on disk (no database for MVP)
 - **SFTP:** paramiko
-- **Deployment:** Single process — FastAPI serves both API and built frontend static files
-- **Containerization:** Single Docker container (planned)
+- **Deployment:** Single process — FastAPI serves both API and built frontend static files on one port
 
-## Development Workflow
+## Development Commands
 
-**Dev mode** (active UI development — two terminals for hot reload):
-```
-Terminal 1: cd backend && uvicorn app.main:app --reload          # API on :8000
-Terminal 2: cd frontend && npm run dev                            # Vite dev server on :5173
-```
-Vite proxies `/api/*` to `:8000`. Edit React code → instant hot reload.
+```bash
+# Dev mode (two terminals, hot reload)
+cd backend && uvicorn app.main:app --reload          # API on :8000
+cd frontend && npm run dev                            # Vite on :5173, proxies /api → :8000
 
-**Production mode** (one process, one port):
-```
-cd frontend && npm run build                                      # builds to frontend/dist/
-cd backend && uvicorn app.main:app                                # serves API + frontend on :8000
-```
-FastAPI mounts `frontend/dist/` as static files. Open `localhost:8000` — everything on one port, no proxy, no CORS.
+# Production mode (one process)
+cd frontend && npm run build
+cd backend && uvicorn app.main:app                    # serves everything on :8000
 
-## Tracked Products
-
-| Product ID | SFTP Path | Structure | Track From |
-|------------|-----------|-----------|------------|
-| ACARS_V8_1 | /ACARS_V8_1 | hierarchical (2 levels) | ALL |
-| ACARS_V8_0 | /ACARS_V8_0 | hierarchical (2 levels) | 8_0_28 |
-| ACARS_V7_3 | /ACARS_V7_3 | flat (1 level) | 7_3_27_0 |
-
-All patch IDs normalized to dotted format (e.g., `7_3_27_7` -> `7.3.27.7`).
-All products stored hierarchically in tracker as `version/patch`.
-
-## Project Structure
-
-```
-OpsCommDocsPipeline/
-├── .env                          # SFTP + Jira credentials (never commit)
-├── .gitignore                    # Protects .env, venv, snapshots, __pycache__
-├── ARCHITECTURE.md               # Detailed architecture and implementation plan
-├── FRONTEND_WORKFLOWS.md          # Frontend reference — API responses, UI mockups, rendering rules
-├── CLAUDE.md                     # This file — project overview for Claude
-├── PROGRESS.md                   # What's been done, what's next
-├── HANDOFF.md                    # Implementation handoff — Jira reference, backend build blocks, known issues
-├── PLAN_RESTRUCTURE.md           # Plan to split into backend/ + frontend/
-├── OpsComm Pipeline - Project Documentation.md  # Original project documentation
-├── product-control-center-mockup.jsx  # React UI mockup (60KB, full dashboard reference)
-│
-├── config/
-│   └── pipeline.json             # Products, lifecycle, Jira fields, portal settings
-│
-├── state/
-│   └── patches/
-│       ├── ACARS_V8_1.json       # V8.1 tracker — 24 patches across 12 versions
-│       ├── ACARS_V8_0.json       # V8.0 tracker — 5 patches across 3 versions
-│       └── ACARS_V7_3.json       # V7.3 tracker — 5 patches in 1 version
-│
-├── scripts/
-│   ├── test_sftp.py              # SFTP dry run: scan, simulate download, approval gate
-│   ├── test_jira.py              # Jira dry run: auth, fields, payload validation
-│   └── create_jira_ticket.py     # Creates real Jira ticket + attachment for a patch ID
-│
-├── patches/                      # Downloaded patch files go here (empty for now)
-├── templates/
-│   └── Flightscape-English-External Business Document.docx  # CAE doc template (future)
-├── docs example/                 # Example docs for reference
-└── venv/                         # Python virtual environment (paramiko, python-dotenv, requests)
+# Tests
+cd backend && pytest tests/ -v -k "not integration"
 ```
 
 ## Pipeline Flow
 
 ```
-SFTP scan -> discover new patches -> download patch folder -> pending_approval -> approved -> published
+SFTP scan → discover → download → pending_approval → approved → published
 ```
 
-Each patch tracks **binaries** and **release notes** independently, with separate Jira tickets for each:
-- **Binaries:** `discovered -> downloaded -> pending_approval -> approved -> published`
-- **Release notes:** `not_started -> discovered -> downloaded -> converted -> pending_approval -> approved -> pdf_exported -> published`
+Each patch tracks **binaries** and **release notes** independently (separate Jira tickets).
 
-Release notes flow: raw doc downloaded from SFTP → converted into CAE branded .docx template → manual review & approval → exported to PDF → Jira ticket created with PDF attachment → published to portal.
+## Project Structure
 
-## Key Decisions
+```
+OpsCommDocsPipeline/
+├── config/pipeline.json          # Products, lifecycle, Jira fields, portal settings
+├── state/patches/*.json          # Tracker files — source of truth for state model
+├── scripts/                      # Original SFTP/Jira scripts (reference for extraction)
+├── product-control-center-mockup.jsx  # React UI mockup (design reference)
+├── patches/                      # Downloaded patch files
+├── templates/                    # CAE doc template (future)
+└── .env                          # SFTP + Jira credentials (never commit)
+```
 
-- **No database for MVP** — JSON tracker files under `state/patches/`, one per product
-- **Patch folder is the unit of work** — download the whole folder, don't inspect contents
-- **Hierarchical tracking even for flat SFTP** — V7.3 is flat on SFTP but stored as version/patch
-- **Idempotent scanning** — re-running scan only adds new patches, never duplicates
-- **track_from cutoff** — older patches already published, no need to re-process
+## Key Documents — Read These
 
-## Jira Integration
+| Document | What it covers |
+|----------|---------------|
+| `HANDOFF.md` | **Start here for building.** Jira gotchas, known issues, and 5 backend build blocks with tests/logging per block |
+| `ARCHITECTURE.md` | Workflows, API endpoints (10 total), state model, approve flow (two-step save), error handling |
+| `PLAN_RESTRUCTURE.md` | Target folder structure for `backend/` + `frontend/`, code extraction map from scripts |
+| `PLAN_FRONTEND.md` | Frontend components, views, API client, data flow, mockup line references |
+| `FRONTEND_WORKFLOWS.md` | API response shapes, UI mockups, rendering rules |
+| `config/pipeline.json` | All Jira field IDs, values, templates — the actual config used at runtime |
+| `state/patches/*.json` | Canonical state model — use this structure, NOT the flat model in scripts |
 
-- **Auth:** Basic Auth with classic API token (no scopes) — scoped tokens don't work
-- **Project:** `CFSSOCP` (id=10008), Issue type: `10163` ("Release notes, documents & binaries")
-- **Search API:** `POST /rest/api/3/search/jql` — old `/search` endpoint removed (HTTP 410)
-- **New/existing detection:** JQL `project = CFSSOCP AND cf[10563] = "Version {version}"` (Release Name field)
-- **Delete via API:** Not available (403) — must delete manually
-- **Ticket creation + attachment:** Confirmed working
+## Agent Instructions
 
-## SFTP Naming Quirks
-
-- V8.1 patches: mixed `v` prefix (`v8.1.0.0`) and no prefix (`8.1.10.0`)
-- V8.0 version folders: `8_0_{minor}` not `ACARS_V8_0_{minor}`
-- V7.3: flat on SFTP, version derived from folder name
-- All normalized to dotted format in tracker
+- **Parallelize when possible.** Backend blocks 2 (SFTP) and 3 (Jira) can be built in parallel — they both depend on block 1 but not on each other. If you can run multiple agents, do it.
+- **Each block = code + tests + logging + commit.** Don't skip tests or logging — they're specified per block in `HANDOFF.md`.
+- **Test before commit:** `cd backend && pytest tests/ -v -k "not integration"` must pass before every push.
+- **State model:** Always use the nested structure from `state/patches/*.json` (binaries + release_notes sub-objects). The scripts use an outdated flat model — don't copy it.
+- **Approve endpoint logic:** Empty request body = mark as published (skip Jira). Body with Jira fields = full flow. Same endpoint, no separate routes.
