@@ -142,12 +142,29 @@ frontend/src/
 - Description auto-recomputes via useEffect when releaseName/createUpdate changes (fixes HANDOFF issue #3)
 - **Jira API calls currently de-wired** — submit shows toast with payload for 5s (dry-run mode), ready to re-wire
 
-### Block F5: Polish (small)
+### Block F5: Polish (small) ✅
 
-Loading skeletons, error banners, empty states, toast notifications.
+Loading skeletons, error toasts, empty states, sidebar animation fix.
 
-**Known polish items:**
-- Sidebar collapse/expand: text appears/disappears instantly while width animates — add fade transition so they feel in sync
+**Files created/modified:**
+```
+frontend/src/
+├── main.tsx                        # Global React Query error → styled persistent toast
+├── components/
+│   ├── layout/
+│   │   └── Sidebar.tsx             # Smooth opacity fade on collapse/expand
+│   └── patches/
+│       └── PatchDetailModal.tsx    # Inline error state for failed detail fetch
+└── views/
+    ├── Dashboard.tsx               # Realistic loading skeletons (cards + table)
+    └── Pipeline.tsx                # Realistic loading skeletons (filter bar + table)
+```
+
+**Design decisions:**
+- No inline error banners — all API errors show as persistent red toasts (global handler in main.tsx) with status code, endpoint, and error detail
+- Sidebar text fade uses CSS opacity transition + overflow-hidden instead of conditional rendering, so collapse and expand both animate smoothly
+- PatchDetailModal has its own inline error since it's a modal (toast alone isn't enough context)
+- Jira approval modal stays in dry-run mode (deferred to separate block)
 
 ### Block F6: Testing (medium)
 
@@ -173,7 +190,7 @@ cd frontend && npx playwright test         # E2E tests
 | F2 | Layout + Dashboard | Medium | F1 | ✅ Done |
 | F3 | Pipeline View | Medium | F2 | ✅ Done |
 | F4 | Modals + Actions | Large | F3 | ✅ Done |
-| F5 | Polish | Small | F4 | |
+| F5 | Polish | Small | F4 | ✅ Done |
 | F6 | Testing | Medium | F5 | |
 
 ### Git flow per block
