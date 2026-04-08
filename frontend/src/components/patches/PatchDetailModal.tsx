@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { X, FolderOpen, Box, FileText, ExternalLink, Check, Loader2 } from "lucide-react";
+import { X, FolderOpen, Box, FileText, ExternalLink, Check, Loader2, AlertCircle } from "lucide-react";
 import { getPatchDetail } from "../../lib/api";
 import { dk, formatDateTime } from "../../lib/constants";
 import type { PatchSummary, PatchDetail, BinariesState, ReleaseNotesState } from "../../lib/types";
@@ -107,7 +107,7 @@ function buildNoteSteps(rn: ReleaseNotesState) {
 // ─── Modal ───────────────────────────────────────────────────────────────────
 
 function PatchDetailModal({ patch, productName, onClose, onApprove }: PatchDetailModalProps) {
-  const { data: detail, isLoading } = useQuery<PatchDetail>({
+  const { data: detail, isLoading, isError, error } = useQuery<PatchDetail>({
     queryKey: ["patchDetail", patch.product_id, patch.patch_id],
     queryFn: () => getPatchDetail(patch.product_id, patch.patch_id),
   });
@@ -158,6 +158,22 @@ function PatchDetailModal({ patch, productName, onClose, onApprove }: PatchDetai
         {isLoading && (
           <div className="flex items-center justify-center py-16">
             <Loader2 className="animate-spin" size={28} style={{ color: dk.accent }} />
+          </div>
+        )}
+
+        {/* ── Error ────────────────────────────────────────────── */}
+        {isError && (
+          <div
+            className="mx-6 mb-4 px-4 py-3 rounded-lg flex items-center gap-3"
+            style={{ backgroundColor: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)" }}
+          >
+            <AlertCircle size={16} style={{ color: "#f87171" }} />
+            <div>
+              <div className="text-sm" style={{ color: "#f87171" }}>Failed to load patch details</div>
+              <div className="text-xs mt-0.5" style={{ color: dk.textDim }}>
+                {(error as any)?.detail || "Unknown error"}
+              </div>
+            </div>
           </div>
         )}
 
