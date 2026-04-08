@@ -5,3 +5,4 @@ __pycache__/
 scripts/sftp_snapshot*.txt
 scripts/dry_run_output.txt
 .DS_Store
+logs/
