@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { AlertCircle, ChevronRight, ArrowRight, Eye, Check } from "lucide-react";
+import { AlertCircle, ChevronRight, ArrowRight, Eye } from "lucide-react";
 import { getDashboardSummary, getPatches } from "../lib/api";
 import { dk } from "../lib/constants";
 import StatusBadge from "../components/shared/StatusBadge";
@@ -159,7 +159,7 @@ export default function Dashboard() {
                             className="px-2.5 py-1 text-xs font-semibold text-white rounded-md inline-flex items-center gap-1"
                             style={{ background: "linear-gradient(135deg,#2563eb,#1d4ed8)" }}
                           >
-                            <Check size={12} /> Bin
+                            Approve Bin
                           </button>
                         )}
                         {p.release_notes.status === "pending_approval" && (
@@ -167,7 +167,7 @@ export default function Dashboard() {
                             className="px-2.5 py-1 text-xs font-semibold text-white rounded-md inline-flex items-center gap-1 ml-1"
                             style={{ background: "linear-gradient(135deg,#7c3aed,#6d28d9)" }}
                           >
-                            <Check size={12} /> Docs
+                            Approve Docs
                           </button>
                         )}
                       </Td>

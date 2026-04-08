@@ -127,6 +127,9 @@ frontend/src/
 
 Loading skeletons, error banners, empty states, toast notifications.
 
+**Known polish items:**
+- Sidebar collapse/expand: text appears/disappears instantly while width animates — add fade transition so they feel in sync
+
 ### Block F6: Testing (medium)
 
 **Component tests (Vitest + React Testing Library):**

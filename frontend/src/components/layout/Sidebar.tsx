@@ -32,11 +32,15 @@ export default function Sidebar() {
       )}
 
       {/* Navigation */}
-      <nav className="flex-1 px-2 space-y-1">
+      <nav className={`flex-1 space-y-1 ${collapsed ? "flex flex-col items-center px-0 pt-3" : "px-2"}`}>
         <NavLink
           to="/"
           end
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors"
+          className={
+            collapsed
+              ? "w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
+              : "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors"
+          }
           style={({ isActive }) => ({
             backgroundColor: isActive ? dk.accent : "transparent",
             color: isActive ? "#fff" : dk.textMute,
@@ -47,7 +51,11 @@ export default function Sidebar() {
         </NavLink>
         <NavLink
           to="/pipeline"
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors"
+          className={
+            collapsed
+              ? "w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
+              : "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors"
+          }
           style={({ isActive }) => ({
             backgroundColor: isActive ? dk.accent : "transparent",
             color: isActive ? "#fff" : dk.textMute,
