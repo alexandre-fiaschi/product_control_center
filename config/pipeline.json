@@ -3,19 +3,19 @@
     "name": "OpsComm Docs & Binaries Pipeline",
     "products": {
       "ACARS_V8_1": {
-        "display_name": "ACARS V8.1",
+        "display_name": "OpsComm 8.1",
         "sftp_path": "/ACARS_V8_1",
         "structure_type": "hierarchical",
         "track_from": null
       },
       "ACARS_V8_0": {
-        "display_name": "ACARS V8.0",
+        "display_name": "OpsComm 8.0",
         "sftp_path": "/ACARS_V8_0",
         "structure_type": "hierarchical",
         "track_from": "8_0_28"
       },
       "ACARS_V7_3": {
-        "display_name": "ACARS V7.3",
+        "display_name": "OpsComm 7.3",
         "sftp_path": "/ACARS_V7_3",
         "structure_type": "flat",
         "track_from": "7_3_27_0"

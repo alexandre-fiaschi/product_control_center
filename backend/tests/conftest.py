@@ -2,7 +2,9 @@ import json
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
+from app.main import app
 from app.state.models import (
     BinariesState,
     PatchEntry,
@@ -84,6 +86,11 @@ def sample_tracker_json():
             }
         },
     }
+
+
+@pytest.fixture
+def client():
+    return TestClient(app)
 
 
 @pytest.fixture
