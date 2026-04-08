@@ -190,15 +190,18 @@ OpsCommDocsPipeline/
 - `jira/attachment.py` — zip creation + upload
 - `services/patch_service.py` — find_patch(), check_existing_version(), status transitions
 
-### Step 4: Create FastAPI app + API endpoints
-- `config.py` — Pydantic Settings loading .env + pipeline.json
-- `state/models.py` — Pydantic models matching JSON structure
-- `main.py` — FastAPI app, router includes, serves frontend static files via `StaticFiles`
-- `api/products.py` — product list/detail endpoints
-- `api/patches.py` — patch CRUD + approve endpoints
-- `api/pipeline.py` — scan trigger + dashboard summary
-- `services/orchestrator.py` — scan → discover → update state flow
-- `pipelines/` — stubs for binaries fetcher/processor and docs
+### Step 4: Create FastAPI app + API endpoints — PARTIALLY DONE
+- [x] `config.py` — Pydantic Settings loading .env + pipeline.json
+- [x] `state/models.py` — Pydantic models matching JSON structure
+- [x] `services/orchestrator.py` — scan → discover → download → update state flow
+- [x] `services/patch_service.py` — find_patch(), validate_transition(), approve_binaries() with two-step save
+- [x] `pipelines/base.py` — PipelineBase ABC
+- [x] `pipelines/binaries/fetcher.py` — recursive SFTP download
+- [x] `pipelines/docs/stub.py` — placeholder returning "skipped"
+- [ ] `main.py` — FastAPI app, router includes, serves frontend static files via `StaticFiles`
+- [ ] `api/products.py` — product list/detail endpoints
+- [ ] `api/patches.py` — patch CRUD + approve endpoints
+- [ ] `api/pipeline.py` — scan trigger + dashboard summary
 - No CORS config needed — frontend served from same origin
 
 ### Step 5: Scaffold frontend with React + Vite
@@ -346,11 +349,18 @@ Never swallow errors silently. Every `except` block must log.
 **Unit tests** (no external dependencies):
 ```
 tests/
-├── test_product_parsers.py    # normalize_patch_id(), version parsing
-├── test_state_manager.py      # load/save tracker with temp files
-├── test_patch_service.py      # find_patch(), status transitions, validation
-├── test_ticket_builder.py     # text_to_adf(), payload construction
-└── test_models.py             # Pydantic model validation
+├── test_product_parsers.py    # normalize_patch_id(), version parsing (21 tests)
+├── test_state_manager.py      # load/save tracker with temp files (6 tests)
+├── test_patch_service.py      # find_patch(), status transitions, approve workflows (9 tests)
+├── test_ticket_builder.py     # text_to_adf(), payload construction (10 tests)
+├── test_models.py             # Pydantic model validation (7 tests)
+├── test_config.py             # Settings loading (4 tests)
+├── test_scanner.py            # SFTP discovery + tracker update (12 tests)
+├── test_jira_client.py        # JiraClient HTTP methods (10 tests)
+├── test_attachment.py         # zip + upload (3 tests)
+├── test_fetcher.py            # SFTP download (3 tests)
+├── test_orchestrator.py       # Scan coordination (4 tests)
+└── conftest.py                # Shared fixtures
 ```
 
 Key test cases:

@@ -91,9 +91,19 @@ Each block is scoped so an agent can implement it in one session with full conte
 
 ---
 
-### Block 4: Services + Pipeline Stubs
+### Block 4: Services + Pipeline Stubs — DONE
+
+**Status:** Complete — 16 new tests passing (99 total).
 
 **Goal:** Build the service layer that coordinates SFTP scanning and approval workflows. Connects Block 1 (state), Block 2 (SFTP), and Block 3 (Jira) into actual business logic.
+
+**What was built:**
+- `backend/app/pipelines/base.py` — `PipelineBase` ABC with `id`, `name`, `process()`, `can_process()`
+- `backend/app/pipelines/binaries/fetcher.py` — `download_patch()` recursive SFTP download preserving folder structure
+- `backend/app/pipelines/docs/stub.py` — Placeholder returning `{"status": "skipped"}`
+- `backend/app/services/patch_service.py` — `find_patch()`, `validate_transition()`, `approve_binaries()` with two-step save (approved → Jira → published), `approve_docs()` stub
+- `backend/app/services/orchestrator.py` — `run_scan()` + `run_scan_product()`: SFTP connect → discover → download → update tracker
+- `backend/tests/test_fetcher.py` (3 tests), `test_patch_service.py` (9 tests), `test_orchestrator.py` (4 tests)
 
 **Files to create:**
 
@@ -194,7 +204,7 @@ curl http://localhost:8000/api/dashboard/summary
 | 1 | Scaffold + Config + State + Models | Nothing | **DONE** |
 | 2 | SFTP Integration | Block 1 | **DONE** |
 | 3 | Jira Integration | Block 1 | **DONE** |
-| 4 | Services + Pipeline Stubs | Blocks 1, 2, 3 |
+| 4 | Services + Pipeline Stubs | Blocks 1, 2, 3 | **DONE** |
 | 5 | FastAPI App + API Endpoints | Block 4 |
 
 **Blocks 2 and 3 can be built in parallel** — they both depend on Block 1 but not on each other.

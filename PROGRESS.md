@@ -64,12 +64,19 @@
 - [x] **Existing ticket inspected** — CFSSOCP-5824 fields compared with our new format, decided to keep new format
 - [x] **Delete via API tested** — 403, must delete manually from board
 
+### Completed — Backend Blocks 1-4 (2026-04-08)
+
+- [x] **Block 1: Scaffold + Config + State + Models** — Pydantic Settings, atomic state manager, 17 tests
+- [x] **Block 2: SFTP Integration** — SFTPConnector, product parsers, scanner, 38 tests
+- [x] **Block 3: Jira Integration** — JiraClient, ticket builder, attachment handler, 28 tests
+- [x] **Block 4: Services + Pipeline Stubs** — orchestrator (scan workflow), patch_service (approve with two-step save), binaries fetcher, docs stub, 16 tests
+- **Total: 99 tests passing** (`cd backend && pytest tests/ -v -k "not integration"`)
+
 ### Not started
 
-- [ ] FastAPI backend (endpoints, state manager, SFTP integration module)
-- [ ] Real SFTP download (currently simulated with print)
-- [ ] Next.js frontend (dashboard, patch list, approve/publish buttons)
-- [ ] Docker Compose setup
+- [ ] Block 5: FastAPI App + API Endpoints (10 endpoints)
+- [ ] Frontend (React + Vite + Tailwind dashboard)
+- [ ] Docker setup
 - [ ] Docs pipeline (stubbed — no DOC/ folders in tracked range)
 
 ---

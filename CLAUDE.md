@@ -49,10 +49,17 @@ OpsCommDocsPipeline/
 │   │   │   ├── models.py          # Pydantic models (ProductTracker, PatchEntry, etc.)
 │   │   │   └── manager.py         # load_tracker(), save_tracker() — atomic writes
 │   │   ├── api/                   # (Block 5)
-│   │   ├── services/              # (Block 4)
-│   │   ├── pipelines/             # (Block 4)
+│   │   ├── services/
+│   │   │   ├── orchestrator.py    # run_scan() — SFTP → discover → download → update state
+│   │   │   └── patch_service.py   # find_patch(), approve_binaries() with two-step save
+│   │   ├── pipelines/
+│   │   │   ├── base.py            # PipelineBase ABC
+│   │   │   ├── binaries/
+│   │   │   │   └── fetcher.py     # download_patch() — recursive SFTP download
+│   │   │   └── docs/
+│   │   │       └── stub.py        # Placeholder — returns "skipped"
 │   │   └── integrations/          # (Blocks 2 + 3)
-│   ├── tests/                     # pytest — 17 tests passing
+│   ├── tests/                     # pytest — 99 tests passing
 │   └── requirements.txt
 ├── config/pipeline.json           # Products, lifecycle, Jira fields, portal settings
 ├── state/patches/*.json           # Tracker files — source of truth for state model
