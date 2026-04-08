@@ -10,7 +10,6 @@ import Td from "../components/shared/Td";
 
 export default function Dashboard() {
   const navigate = useNavigate();
-
   const { data: summary, isLoading: summaryLoading } = useQuery({
     queryKey: ["dashboard-summary"],
     queryFn: getDashboardSummary,
@@ -44,12 +43,46 @@ export default function Dashboard() {
   // Loading skeleton
   if (isLoading) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 animate-pulse">
+        {/* Top row skeleton */}
         <div className="grid grid-cols-3 gap-4">
-          <div className="rounded-xl p-5 h-28 animate-pulse" style={{ backgroundColor: dk.card }} />
-          <div className="col-span-2 rounded-xl p-5 h-28 animate-pulse" style={{ backgroundColor: dk.card }} />
+          {/* Summary card skeleton */}
+          <div className="rounded-xl p-5" style={{ backgroundColor: dk.card, border: `1px solid ${dk.border}` }}>
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 rounded-full" style={{ backgroundColor: dk.surface }} />
+              <div className="space-y-2">
+                <div className="w-12 h-6 rounded" style={{ backgroundColor: dk.surface }} />
+                <div className="w-28 h-3 rounded" style={{ backgroundColor: dk.surface }} />
+              </div>
+            </div>
+          </div>
+          {/* Tracked products skeleton */}
+          <div className="col-span-2 rounded-xl p-5" style={{ backgroundColor: dk.card, border: `1px solid ${dk.border}` }}>
+            <div className="w-32 h-3 rounded mb-4" style={{ backgroundColor: dk.surface }} />
+            <div className="space-y-3">
+              <div className="h-10 rounded-lg" style={{ backgroundColor: dk.surface }} />
+              <div className="h-10 rounded-lg" style={{ backgroundColor: dk.surface }} />
+              <div className="h-10 rounded-lg" style={{ backgroundColor: dk.surface }} />
+            </div>
+          </div>
         </div>
-        <div className="rounded-xl p-5 animate-pulse" style={{ backgroundColor: dk.card, height: 300 }} />
+        {/* Actionable table skeleton */}
+        <div>
+          <div className="w-44 h-5 rounded mb-3" style={{ backgroundColor: dk.surface }} />
+          <div className="rounded-xl p-4" style={{ backgroundColor: dk.card, border: `1px solid ${dk.border}` }}>
+            <div className="space-y-4">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className="flex items-center gap-4">
+                  <div className="w-24 h-4 rounded" style={{ backgroundColor: dk.surface }} />
+                  <div className="w-16 h-4 rounded" style={{ backgroundColor: dk.surface }} />
+                  <div className="w-20 h-5 rounded-full" style={{ backgroundColor: dk.surface }} />
+                  <div className="w-20 h-5 rounded-full" style={{ backgroundColor: dk.surface }} />
+                  <div className="ml-auto w-20 h-7 rounded-md" style={{ backgroundColor: dk.surface }} />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
