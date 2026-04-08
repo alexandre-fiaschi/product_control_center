@@ -151,21 +151,27 @@ export default function Dashboard() {
                       <Td><StatusBadge status={p.binaries.status} /></Td>
                       <Td><StatusBadge status={p.release_notes.status} /></Td>
                       <Td align="right" nowrap>
-                        <button className="p-1 rounded mr-1 inline-flex" style={{ color: dk.textDim }}>
+                        <button
+                          className="p-1 rounded mr-1 inline-flex hover:opacity-80 cursor-pointer"
+                          style={{ color: dk.textDim }}
+                          onClick={() => navigate(`/pipeline?product=${p.product_id}&detail=${p.patch_id}`)}
+                        >
                           <Eye size={14} />
                         </button>
                         {p.binaries.status === "pending_approval" && (
                           <button
-                            className="px-2.5 py-1 text-xs font-semibold text-white rounded-md inline-flex items-center gap-1"
+                            className="px-2.5 py-1 text-xs font-semibold text-white rounded-md inline-flex items-center gap-1 cursor-pointer"
                             style={{ background: "linear-gradient(135deg,#2563eb,#1d4ed8)" }}
+                            onClick={() => navigate(`/pipeline?product=${p.product_id}&approve=${p.patch_id}&pipeline=binaries`)}
                           >
                             Approve Bin
                           </button>
                         )}
                         {p.release_notes.status === "pending_approval" && (
                           <button
-                            className="px-2.5 py-1 text-xs font-semibold text-white rounded-md inline-flex items-center gap-1 ml-1"
+                            className="px-2.5 py-1 text-xs font-semibold text-white rounded-md inline-flex items-center gap-1 ml-1 cursor-pointer"
                             style={{ background: "linear-gradient(135deg,#7c3aed,#6d28d9)" }}
+                            onClick={() => navigate(`/pipeline?product=${p.product_id}&approve=${p.patch_id}&pipeline=docs`)}
                           >
                             Approve Docs
                           </button>

@@ -1,12 +1,16 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { Search, Filter, ChevronUp, ChevronDown, Eye, ExternalLink } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { Search, Filter, ChevronUp, ChevronDown, ExternalLink } from "lucide-react";
 import { getPatches, getProducts } from "../lib/api";
 import { dk, formatDate } from "../lib/constants";
+import type { PatchSummary, ApproveResponse } from "../lib/types";
 import StatusBadge from "../components/shared/StatusBadge";
 import Th from "../components/shared/Th";
 import Td from "../components/shared/Td";
+import PatchDetailModal from "../components/patches/PatchDetailModal";
+import JiraApprovalModal from "../components/patches/JiraApprovalModal";
 
 function getLocalPath(productId: string, patchId: string): string {
   return `patches/${productId}/${patchId}`;
@@ -14,10 +18,18 @@ function getLocalPath(productId: string, patchId: string): string {
 
 export default function Pipeline() {
   const [searchParams] = useSearchParams();
+  const queryClient = useQueryClient();
   const [productFilter, setProductFilter] = useState(searchParams.get("product") || "all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [showHistory, setShowHistory] = useState(false);
+
+  // Modal state
+  const [detailPatch, setDetailPatch] = useState<PatchSummary | null>(null);
+  const [approvalModal, setApprovalModal] = useState<{
+    patch: PatchSummary;
+    pipelineType: "binaries" | "docs";
+  } | null>(null);
 
   const { data: patchList, isLoading: patchesLoading } = useQuery({
     queryKey: ["patches"],
@@ -50,6 +62,68 @@ export default function Pipeline() {
     if (searchQuery) list = list.filter((p) => p.patch_id.includes(searchQuery) || p.version.includes(searchQuery));
     return list;
   }, [patchList?.history, productFilter, searchQuery]);
+
+  // Auto-open modals when navigated from Dashboard with URL params
+  useEffect(() => {
+    const detailId = searchParams.get("detail");
+    const approveId = searchParams.get("approve");
+    const pipelineParam = searchParams.get("pipeline") as "binaries" | "docs" | null;
+    if (!patchList) return;
+
+    const allPatches = [...patchList.actionable, ...patchList.history];
+
+    if (approveId && pipelineParam) {
+      const patch = allPatches.find((p) => p.patch_id === approveId);
+      if (patch) setApprovalModal({ patch, pipelineType: pipelineParam });
+    } else if (detailId) {
+      const patch = allPatches.find((p) => p.patch_id === detailId);
+      if (patch) setDetailPatch(patch);
+    }
+  }, [patchList, searchParams]);
+
+  // Check if a version already has published patches (for new/existing folder logic)
+  const isNewFolder = useCallback(
+    (patch: PatchSummary): boolean => {
+      const allPatches = [...(patchList?.actionable ?? []), ...(patchList?.history ?? [])];
+      return !allPatches.some(
+        (p) =>
+          p.product_id === patch.product_id &&
+          p.version === patch.version &&
+          p.patch_id !== patch.patch_id &&
+          p.binaries.status === "published",
+      );
+    },
+    [patchList],
+  );
+
+  // Open Jira approval modal (from table button or from detail modal)
+  const openApproval = useCallback(
+    (patch: PatchSummary, pipelineType: "binaries" | "docs") => {
+      setDetailPatch(null); // close detail if open
+      setApprovalModal({ patch, pipelineType });
+    },
+    [],
+  );
+
+  // Handle successful approval
+  const handleApproveSuccess = useCallback(
+    (res: ApproveResponse) => {
+      setApprovalModal(null);
+      if (res.jira_ticket_key) {
+        toast.success(
+          `${res.pipeline === "binaries" ? "Binaries" : "Docs"} published — ${res.jira_ticket_key}`,
+        );
+      } else {
+        toast.success(
+          `${res.pipeline === "binaries" ? "Binaries" : "Docs"} marked as published`,
+        );
+      }
+      queryClient.invalidateQueries({ queryKey: ["patches"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+    },
+    [queryClient],
+  );
 
   if (isLoading) {
     return (
@@ -140,8 +214,16 @@ export default function Pipeline() {
                     <tr key={`${p.product_id}-${p.patch_id}`} style={{ borderBottom: `1px solid ${dk.border}` }}>
                       {/* <Td muted small>{productNames.get(p.product_id) ?? p.product_id}</Td> */}
                       <Td mono bold>{p.patch_id}</Td>
-                      <Td><StatusBadge status={p.binaries.status} /></Td>
-                      <Td><StatusBadge status={p.release_notes.status} /></Td>
+                      <Td>
+                        <button className="cursor-pointer" onClick={() => setDetailPatch(p)}>
+                          <StatusBadge status={p.binaries.status} />
+                        </button>
+                      </Td>
+                      <Td>
+                        <button className="cursor-pointer" onClick={() => setDetailPatch(p)}>
+                          <StatusBadge status={p.release_notes.status} />
+                        </button>
+                      </Td>
                       <Td mono small>
                         <a
                           href="#"
@@ -154,12 +236,10 @@ export default function Pipeline() {
                         </a>
                       </Td>
                       <Td nowrap>
-                        <button className="p-1 rounded mr-1 inline-flex" style={{ color: dk.textDim }}>
-                          <Eye size={14} />
-                        </button>
                         {p.binaries.status !== "published" && (
                           <button
                             disabled={p.binaries.status !== "pending_approval"}
+                            onClick={() => p.binaries.status === "pending_approval" && openApproval(p, "binaries")}
                             className="px-2.5 py-1 text-xs font-semibold rounded-md inline-flex items-center gap-1"
                             style={p.binaries.status === "pending_approval"
                               ? { background: "linear-gradient(135deg,#2563eb,#1d4ed8)", color: "#fff" }
@@ -171,6 +251,7 @@ export default function Pipeline() {
                         {p.release_notes.status !== "published" && (
                           <button
                             disabled={p.release_notes.status !== "pending_approval"}
+                            onClick={() => p.release_notes.status === "pending_approval" && openApproval(p, "docs")}
                             className="px-2.5 py-1 text-xs font-semibold rounded-md inline-flex items-center gap-1 ml-1"
                             style={p.release_notes.status === "pending_approval"
                               ? { background: "linear-gradient(135deg,#7c3aed,#6d28d9)", color: "#fff" }
@@ -222,6 +303,7 @@ export default function Pipeline() {
                       key={`${p.product_id}-${p.patch_id}`}
                       className="cursor-pointer"
                       style={{ borderBottom: `1px solid ${dk.border}` }}
+                      onClick={() => setDetailPatch(p)}
                     >
                       <Td muted small>{productNames.get(p.product_id) ?? p.product_id}</Td>
                       <Td mono bold>{p.patch_id}</Td>
@@ -268,6 +350,28 @@ export default function Pipeline() {
           </div>
         )}
       </div>
+
+      {/* ── Modals ───────────────────────────────────────────────── */}
+
+      {detailPatch && (
+        <PatchDetailModal
+          patch={detailPatch}
+          productName={productNames.get(detailPatch.product_id) ?? detailPatch.product_id}
+          onClose={() => setDetailPatch(null)}
+          onApprove={openApproval}
+        />
+      )}
+
+      {approvalModal && (
+        <JiraApprovalModal
+          patch={approvalModal.patch}
+          productName={productNames.get(approvalModal.patch.product_id) ?? approvalModal.patch.product_id}
+          pipelineType={approvalModal.pipelineType}
+          isNewFolder={isNewFolder(approvalModal.patch)}
+          onClose={() => setApprovalModal(null)}
+          onSuccess={handleApproveSuccess}
+        />
+      )}
     </div>
   );
 }

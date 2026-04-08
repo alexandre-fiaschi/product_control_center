@@ -117,18 +117,30 @@ frontend/src/
 - Product filter reads URL param from Dashboard navigation (`?product=...`)
 - Product column commented out (single product for now, ready to re-enable)
 
-### Block F4: Modals + Actions (large)
+### Block F4: Modals + Actions (large) ✅
 
 Patch detail timeline and Jira approval modal with full editable form.
 
-**Files to create:**
+**Files created/modified:**
 ```
 frontend/src/
-└── components/
-    └── patches/
-        ├── PatchDetailModal.tsx    # Timeline view (mockup lines 402–506)
-        └── JiraApprovalModal.tsx   # Full Jira form (mockup lines 141–363)
+├── components/
+│   └── patches/
+│       ├── PatchDetailModal.tsx    # Timeline view (mockup lines 402–506)
+│       └── JiraApprovalModal.tsx   # Full Jira form (mockup lines 141–363)
+├── views/
+│   ├── Pipeline.tsx               # Wired modals, status badges open detail, URL params
+│   └── Dashboard.tsx              # Wired buttons → navigate to Pipeline with modal params
 ```
+
+**Design decisions:**
+- Status badges in actionable table are clickable → opens PatchDetailModal (replaced Eye icon)
+- Dashboard approve/detail buttons navigate to `/pipeline?approve=...` or `?detail=...`
+- Pipeline reads URL params on load to auto-open the right modal
+- Approve buttons shown disabled/greyed when pipeline not ready (not hidden)
+- Detail modal: two-column flex layout with bottom-aligned buttons
+- Description auto-recomputes via useEffect when releaseName/createUpdate changes (fixes HANDOFF issue #3)
+- **Jira API calls currently de-wired** — submit shows toast with payload for 5s (dry-run mode), ready to re-wire
 
 ### Block F5: Polish (small)
 
@@ -160,7 +172,7 @@ cd frontend && npx playwright test         # E2E tests
 | F1 | Scaffold + Shared Code | Small | Backend complete | ✅ Done |
 | F2 | Layout + Dashboard | Medium | F1 | ✅ Done |
 | F3 | Pipeline View | Medium | F2 | ✅ Done |
-| F4 | Modals + Actions | Large | F3 | |
+| F4 | Modals + Actions | Large | F3 | ✅ Done |
 | F5 | Polish | Small | F4 | |
 | F6 | Testing | Medium | F5 | |
 
