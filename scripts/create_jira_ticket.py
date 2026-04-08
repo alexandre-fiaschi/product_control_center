@@ -67,7 +67,7 @@ def find_patch(patch_id):
 
 def check_existing_version(version):
     """Query Jira to see if a ticket already exists for this version folder."""
-    jql = f'project = {JIRA_PROJECT_KEY} AND cf[10563] ~ "{version}"'
+    jql = f'project = {JIRA_PROJECT_KEY} AND cf[10563] = "Version {version}"'
     resp = jira_post("/search/jql", json_data={"jql": jql, "maxResults": 1, "fields": ["summary", "customfield_10563"]})
     if resp.status_code == 200:
         return resp.json().get("total", 0) > 0
@@ -108,7 +108,7 @@ def main():
         print(f"  ERROR: Patch {patch_id} not found in any state tracker file")
         sys.exit(1)
     product_id, version, patch_data = result
-    print(f"  Found: product={product_id}, version={version}, status={patch_data['status']}")
+    print(f"  Found: product={product_id}, version={version}, binaries={patch_data['binaries']['status']}, release_notes={patch_data['release_notes']['status']}")
 
     # Step 3: New or existing folder?
     print(f"\nStep 3: Checking if version folder '{version}' already exists in Jira...")

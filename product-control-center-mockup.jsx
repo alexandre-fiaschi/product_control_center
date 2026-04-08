@@ -5,7 +5,7 @@ import {
   ExternalLink, Paperclip, AlertCircle, CheckCircle2, Circle, ArrowRight,
   ChevronUp, Eye, Layers, Activity, Box, Zap
 } from "lucide-react";
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
+// recharts removed — no longer needed for dashboard
 
 // ─── REAL DATA FROM STATE TRACKERS ───────────────────────────────────────────
 
@@ -163,6 +163,9 @@ const JiraApprovalModal = ({ patch, onClose, pipelineType }) => {
   const [description, setDescription] = useState(
     `Hi Team,\n\nI have this ${pipelineType} for the release ${version} that should be added in a ${newOrExisting} folder '${releaseName}'.\n\nPlease contact me for any questions you may have.\n\nThank you very much,`
   );
+
+  // Already on portal toggle — skip Jira, auto-approve+publish
+  const [alreadyOnPortal, setAlreadyOnPortal] = useState(false);
 
   // Track if user modified fields (visual indicator)
   const [touched, setTouched] = useState({});
@@ -328,7 +331,7 @@ const JiraApprovalModal = ({ patch, onClose, pipelineType }) => {
             <AlertCircle size={16} className="mt-0.5 flex-shrink-0" style={{ color: "#fbbf24" }} />
             <div className="text-xs" style={{ color: "#fcd34d" }}>
               <strong>New/Existing logic:</strong> JQL checks{" "}
-              <code className="px-1 rounded text-xs" style={{ backgroundColor: "rgba(251,191,36,0.12)" }}>project = CFSSOCP AND cf[10563] ~ "{version}"</code>.
+              <code className="px-1 rounded text-xs" style={{ backgroundColor: "rgba(251,191,36,0.12)" }}>project = CFSSOCP AND cf[10563] = "Version {version}"</code>.
               {isNewFolder
                 ? ` No existing ticket found for version ${version} \u2014 this will create a NEW folder on the portal.`
                 : ` Existing ticket found for version ${version} \u2014 this will add to the EXISTING folder on the portal.`}
@@ -337,25 +340,52 @@ const JiraApprovalModal = ({ patch, onClose, pipelineType }) => {
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 flex items-center justify-between rounded-b-xl" style={{ borderTop: `1px solid ${dk.border}`, backgroundColor: dk.surface }}>
-          <button onClick={onClose} className="px-4 py-2 text-sm font-medium rounded-lg transition-colors" style={{ color: dk.textMute }}>
-            Cancel
-          </button>
-          <div className="flex items-center gap-3">
+        <div className="px-6 py-4 rounded-b-xl space-y-3" style={{ borderTop: `1px solid ${dk.border}`, backgroundColor: dk.surface }}>
+          {/* Already on Portal toggle */}
+          <div className="flex items-center justify-between">
+            <button onClick={() => setAlreadyOnPortal(!alreadyOnPortal)}
+              className="flex items-center gap-3 group cursor-pointer">
+              <div className="w-10 h-5 rounded-full relative transition-colors"
+                style={{ backgroundColor: alreadyOnPortal ? "#34d399" : dk.border }}>
+                <div className="absolute top-0.5 w-4 h-4 rounded-full shadow transition-all"
+                  style={{ backgroundColor: "#fff", left: alreadyOnPortal ? 22 : 2 }} />
+              </div>
+              <div>
+                <div className="text-sm font-medium" style={{ color: alreadyOnPortal ? "#6ee7b7" : dk.textMute }}>
+                  Already available on portal
+                </div>
+                <div className="text-xs" style={{ color: dk.textDim }}>
+                  {alreadyOnPortal
+                    ? "Skip Jira ticket \u2014 mark as approved & published immediately"
+                    : "Turn on if this release is already live on the community portal"}
+                </div>
+              </div>
+            </button>
             {Object.keys(touched).length > 0 && (
               <span className="text-xs px-2 py-1 rounded" style={{ backgroundColor: "rgba(251,191,36,0.12)", color: "#fbbf24" }}>
                 {Object.keys(touched).length} field{Object.keys(touched).length > 1 ? "s" : ""} modified
               </span>
             )}
-            <button className="px-4 py-2 text-sm font-medium rounded-lg transition-colors"
-              style={{ color: dk.accent, border: `1px solid rgba(79,143,247,0.3)` }}>
-              Preview JSON Payload
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex items-center justify-between">
+            <button onClick={onClose} className="px-4 py-2 text-sm font-medium rounded-lg transition-colors" style={{ color: dk.textMute }}>
+              Cancel
             </button>
-            <button className="px-5 py-2.5 text-sm font-semibold text-white rounded-lg transition-colors flex items-center gap-2 shadow-sm"
-              style={{ background: isPurple ? "linear-gradient(135deg,#7c3aed,#6d28d9)" : "linear-gradient(135deg,#2563eb,#1d4ed8)" }}>
-              <Check size={16} />
-              Approve & Create Jira Ticket
-            </button>
+            {alreadyOnPortal ? (
+              <button className="px-5 py-2.5 text-sm font-semibold text-white rounded-lg transition-colors flex items-center gap-2 shadow-sm"
+                style={{ background: "linear-gradient(135deg,#059669,#047857)" }}>
+                <CheckCircle2 size={16} />
+                Mark as Approved & Published
+              </button>
+            ) : (
+              <button className="px-5 py-2.5 text-sm font-semibold text-white rounded-lg transition-colors flex items-center gap-2 shadow-sm"
+                style={{ background: isPurple ? "linear-gradient(135deg,#7c3aed,#6d28d9)" : "linear-gradient(135deg,#2563eb,#1d4ed8)" }}>
+                <Check size={16} />
+                Approve & Create Jira Ticket
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -540,10 +570,6 @@ export default function ProductControlCenter() {
     return list;
   }, [history, productFilter, searchQuery]);
 
-  const pieData = [
-    { name: "Pending", value: actionable.length, color: "#f59e0b" },
-    { name: "Published", value: history.length, color: "#34d399" },
-  ];
 
   const productStats = PRODUCTS.map((prod) => {
     const patches = PATCHES.filter((p) => p.product_id === prod.product_id);
@@ -642,59 +668,59 @@ export default function ProductControlCenter() {
           {/* ─── DASHBOARD VIEW ─────────────────── */}
           {currentView === "dashboard" && (
             <div className="space-y-6">
-              <div className="grid grid-cols-4 gap-4">
-                <SummaryCard label="Total Patches" value={PATCHES.length} sub={`across ${PRODUCTS.length} products`} />
-                <SummaryCard label="Actionable" value={actionable.length} sub="need attention" valueColor="#fbbf24" />
-                <SummaryCard label="Published" value={history.length} sub="fully complete" valueColor="#34d399" />
+              {/* Review needed + Products overview */}
+              <div className="grid grid-cols-3 gap-4">
+                {/* Patches need review */}
                 <div className="rounded-xl p-5 flex items-center gap-4" style={{ backgroundColor: dk.card, border: `1px solid ${dk.border}` }}>
-                  <div style={{ width: 80, height: 80 }}>
-                    <ResponsiveContainer>
-                      <PieChart>
-                        <Pie data={pieData} dataKey="value" cx="50%" cy="50%" innerRadius={22} outerRadius={36} strokeWidth={0}>
-                          {pieData.map((e, i) => <Cell key={i} fill={e.color} />)}
-                        </Pie>
-                        <Tooltip contentStyle={{ backgroundColor: dk.surface, border: `1px solid ${dk.border}`, borderRadius: 8, color: dk.text }} />
-                      </PieChart>
-                    </ResponsiveContainer>
+                  <div className="w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0"
+                    style={{ backgroundColor: actionable.length > 0 ? "rgba(251,191,36,0.15)" : "rgba(52,211,153,0.15)" }}>
+                    <AlertCircle size={22} style={{ color: actionable.length > 0 ? "#fbbf24" : "#34d399" }} />
                   </div>
                   <div>
-                    <div className="flex items-center gap-2 text-xs" style={{ color: dk.textMute }}>
-                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: "#f59e0b" }} /> Pending ({actionable.length})
-                    </div>
-                    <div className="flex items-center gap-2 text-xs mt-1" style={{ color: dk.textMute }}>
-                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: "#34d399" }} /> Published ({history.length})
+                    <div className="text-3xl font-bold" style={{ color: actionable.length > 0 ? "#fbbf24" : "#34d399" }}>{actionable.length}</div>
+                    <div className="text-sm" style={{ color: dk.textMute }}>
+                      {actionable.length === 1 ? "patch needs" : "patches need"} review
                     </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Product cards */}
-              <div>
-                <h2 className="text-lg font-semibold mb-3" style={{ color: dk.text }}>Products</h2>
-                <div className="grid grid-cols-3 gap-4">
-                  {productStats.map((prod) => (
-                    <div key={prod.product_id}
-                      className="rounded-xl p-5 cursor-pointer transition-all"
-                      style={{ backgroundColor: dk.card, border: `1px solid ${dk.border}` }}
-                      onClick={() => { setProductFilter(prod.product_id); setCurrentView("pipeline"); }}>
-                      <div className="flex items-center justify-between mb-3">
-                        <h3 className="font-semibold" style={{ color: dk.text }}>{prod.display_name}</h3>
-                        <span className="text-xs font-mono" style={{ color: dk.textDim }}>patches/{prod.product_id}/</span>
-                      </div>
-                      <div className="text-2xl font-bold mb-2" style={{ color: dk.text }}>
-                        {prod.patches} <span className="text-sm font-normal" style={{ color: dk.textDim }}>patches</span>
-                      </div>
-                      <div className="flex gap-4 text-xs">
-                        <div><span className="font-semibold" style={{ color: "#fbbf24" }}>{prod.pendingBin}</span> <span style={{ color: dk.textDim }}>bin pending</span></div>
-                        <div><span className="font-semibold" style={{ color: "#a78bfa" }}>{prod.pendingDocs}</span> <span style={{ color: dk.textDim }}>docs pending</span></div>
-                        <div><span className="font-semibold" style={{ color: "#34d399" }}>{prod.published}</span> <span style={{ color: dk.textDim }}>published</span></div>
-                      </div>
-                      <div className="mt-3 w-full h-2 rounded-full overflow-hidden flex" style={{ backgroundColor: dk.border }}>
-                        <div className="h-full" style={{ backgroundColor: "#34d399", width: `${(prod.published / prod.patches) * 100}%` }} />
-                        <div className="h-full" style={{ backgroundColor: "#f59e0b", width: `${((prod.patches - prod.published) / prod.patches) * 100}%` }} />
-                      </div>
-                    </div>
-                  ))}
+                {/* Products — single card with all 3 */}
+                <div className="col-span-2 rounded-xl p-5" style={{ backgroundColor: dk.card, border: `1px solid ${dk.border}` }}>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-semibold" style={{ color: dk.textMute }}>Tracked Products</h3>
+                    <span className="text-xs" style={{ color: dk.textDim }}>Latest official version</span>
+                  </div>
+                  <div className="space-y-3">
+                    {productStats.map((prod) => {
+                      // Find latest published version for this product
+                      const publishedPatches = PATCHES.filter(
+                        (p) => p.product_id === prod.product_id && p.binaries.status === "published"
+                      );
+                      const latestVersion = publishedPatches.length > 0
+                        ? publishedPatches.sort((a, b) => b.version.localeCompare(a.version, undefined, { numeric: true }))[0].version
+                        : "—";
+                      return (
+                        <div key={prod.product_id}
+                          className="flex items-center justify-between py-2 px-3 rounded-lg cursor-pointer transition-colors"
+                          style={{ backgroundColor: dk.surface }}
+                          onClick={() => { setProductFilter(prod.product_id); setCurrentView("pipeline"); }}>
+                          <div className="flex items-center gap-3">
+                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: prod.pendingBin > 0 ? "#f59e0b" : "#34d399" }} />
+                            <span className="font-medium text-sm" style={{ color: dk.text }}>{prod.display_name}</span>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            {prod.pendingBin > 0 && (
+                              <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: "rgba(251,191,36,0.15)", color: "#fbbf24" }}>
+                                {prod.pendingBin + prod.pendingDocs} pending
+                              </span>
+                            )}
+                            <span className="font-mono text-sm font-semibold" style={{ color: dk.accent }}>v{latestVersion}</span>
+                            <ChevronRight size={14} style={{ color: dk.textDim }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 
@@ -915,10 +941,4 @@ const Td = ({ children, mono, bold, muted, small, align, nowrap, truncate }) => 
   </td>
 );
 
-const SummaryCard = ({ label, value, sub, valueColor }) => (
-  <div className="rounded-xl p-5" style={{ backgroundColor: dk.card, border: `1px solid ${dk.border}` }}>
-    <div className="text-sm mb-1" style={{ color: dk.textMute }}>{label}</div>
-    <div className="text-3xl font-bold" style={{ color: valueColor || dk.text }}>{value}</div>
-    <div className="text-xs mt-1" style={{ color: dk.textDim }}>{sub}</div>
-  </div>
-);
+

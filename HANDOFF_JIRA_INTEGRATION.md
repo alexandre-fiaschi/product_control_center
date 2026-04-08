@@ -112,7 +112,7 @@ Run: `source venv/bin/activate && python scripts/test_jira.py`
 ### 11. New/Existing Folder Detection — JQL Corrected
 
 - **Wrong approach:** Searching by summary (`summary ~ "Version {version}"`) — doesn't match existing tickets because summary format varies (e.g., `"Add binaries OpsComm v8.0.27"`)
-- **Correct approach:** Search by Release Name custom field: `project = CFSSOCP AND cf[10563] ~ "{version}"`
+- **Correct approach:** Search by Release Name custom field: `project = CFSSOCP AND cf[10563] = "Version {version}"`
 - Validated against existing ticket CFSSOCP-5824 (Release Name: `8.0.27`, Create/Update: `Existing CAE Portal Release`)
 
 ### 12. Existing Ticket Field Observations (CFSSOCP-5824)
@@ -184,4 +184,26 @@ Existing tickets in CFSSOCP use different conventions than our new templates:
 
 All endpoints use Basic Auth: `email:classic_api_token` against `https://caeglobal.atlassian.net`.
 
-**JQL for new/existing detection:** `project = CFSSOCP AND cf[10563] ~ "{version}"` (searches by Release Name field, not summary).
+**JQL for new/existing detection:** `project = CFSSOCP AND cf[10563] = "Version {version}"` (exact match by Release Name field, not summary).
+
+---
+
+## Known Issues & Technical Debt (from code review, 2026-04-08)
+
+### Fixed
+
+- **JQL fuzzy match bug** — The original JQL used `~` (contains) operator: `cf[10563] ~ "{version}"`. Searching for `8.1.1` would also match `8.1.11`, `2.8.1`, `10.8.1`, etc. — causing incorrect new/existing folder classification. **Fixed** to use `=` (exact match) with full Release Name format: `cf[10563] = "Version {version}"`. Tested against live Jira — old query returned 5 false matches, new query returns 0 for `Version 8.1.1` and correctly returns CFSSOCP-6590 for `Version 8.1.11`.
+
+### Open — Will Be Fixed During Backend Build
+
+1. **State model inconsistency** — `test_sftp.py` writes/reads flat `patch['status']` fields, but the committed JSON trackers use nested `binaries.status` and `release_notes.status`. `create_jira_ticket.py` line 111 also referenced `patch_data['status']` (fixed to read nested structure). Both scripts would crash against current state files without the fix. **Resolution:** Extract scripts into proper backend modules with one consistent state model.
+
+2. **State writes not atomic** — `test_sftp.py` overwrites tracker files with plain `json.dump()`. If the process is interrupted mid-write, the file is corrupted and the tracker is lost. ARCHITECTURE.md promises atomic writes (write to `.tmp` → rename) but the scripts don't implement it. **Resolution:** Implement in `backend/app/state/manager.py` during restructure.
+
+3. **Mockup uses hardcoded data** — `product-control-center-mockup.jsx` says "REAL DATA FROM STATE TRACKERS" but hardcodes fake published patches and Jira ticket keys. The real state is 31 pending binaries, 0 published. **Resolution:** The mockup is a design reference only — the real frontend will fetch from the backend API.
+
+4. **Mockup timeline uses fake timestamps** — `PatchDetailModal` uses `patch.discovered_at` for both "Discovered" and "Downloaded" steps, and fabricates release note steps. The actual state has separate per-pipeline timestamps. **Resolution:** Fix when building real `PatchDetailModal.tsx` component.
+
+5. **Mockup description doesn't recompute** — In `JiraApprovalModal`, editing Release Name or Create/Update/Remove doesn't update the description textarea (initialized once on open). **Resolution:** Add `useEffect` to recompute description when those fields change in real component.
+
+6. **Mockup buttons are placeholders** — Scan button, approve buttons, and all links are non-functional (`href="#"`, no handlers). **Resolution:** Expected for a mockup — real handlers built during frontend implementation.

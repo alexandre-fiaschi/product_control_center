@@ -18,12 +18,12 @@
             "jira_ticket_url": null
           },
           "release_notes": {
-            "status": "not_started",
+            "status": "published",
             "discovered_at": null,
             "downloaded_at": null,
             "converted_at": null,
             "approved_at": null,
-            "published_at": null,
+            "published_at": "2026-01-28T00:00:00+00:00",
             "pdf_exported_at": null,
             "jira_ticket_key": null,
             "jira_ticket_url": null
@@ -43,12 +43,12 @@
             "jira_ticket_url": null
           },
           "release_notes": {
-            "status": "not_started",
+            "status": "published",
             "discovered_at": null,
             "downloaded_at": null,
             "converted_at": null,
             "approved_at": null,
-            "published_at": null,
+            "published_at": "2026-01-28T00:00:00+00:00",
             "pdf_exported_at": null,
             "jira_ticket_key": null,
             "jira_ticket_url": null
@@ -68,12 +68,12 @@
             "jira_ticket_url": null
           },
           "release_notes": {
-            "status": "not_started",
+            "status": "published",
             "discovered_at": null,
             "downloaded_at": null,
             "converted_at": null,
             "approved_at": null,
-            "published_at": null,
+            "published_at": "2026-01-28T00:00:00+00:00",
             "pdf_exported_at": null,
             "jira_ticket_key": null,
             "jira_ticket_url": null
@@ -93,12 +93,12 @@
             "jira_ticket_url": null
           },
           "release_notes": {
-            "status": "not_started",
+            "status": "published",
             "discovered_at": null,
             "downloaded_at": null,
             "converted_at": null,
             "approved_at": null,
-            "published_at": null,
+            "published_at": "2026-01-28T00:00:00+00:00",
             "pdf_exported_at": null,
             "jira_ticket_key": null,
             "jira_ticket_url": null
@@ -122,12 +122,12 @@
             "jira_ticket_url": null
           },
           "release_notes": {
-            "status": "not_started",
+            "status": "published",
             "discovered_at": null,
             "downloaded_at": null,
             "converted_at": null,
             "approved_at": null,
-            "published_at": null,
+            "published_at": "2026-01-28T00:00:00+00:00",
             "pdf_exported_at": null,
             "jira_ticket_key": null,
             "jira_ticket_url": null
@@ -151,12 +151,12 @@
             "jira_ticket_url": null
           },
           "release_notes": {
-            "status": "not_started",
+            "status": "published",
             "discovered_at": null,
             "downloaded_at": null,
             "converted_at": null,
             "approved_at": null,
-            "published_at": null,
+            "published_at": "2026-01-28T00:00:00+00:00",
             "pdf_exported_at": null,
             "jira_ticket_key": null,
             "jira_ticket_url": null
@@ -176,12 +176,12 @@
             "jira_ticket_url": null
           },
           "release_notes": {
-            "status": "not_started",
+            "status": "published",
             "discovered_at": null,
             "downloaded_at": null,
             "converted_at": null,
             "approved_at": null,
-            "published_at": null,
+            "published_at": "2026-01-28T00:00:00+00:00",
             "pdf_exported_at": null,
             "jira_ticket_key": null,
             "jira_ticket_url": null
@@ -338,12 +338,12 @@
             "jira_ticket_url": null
           },
           "release_notes": {
-            "status": "not_started",
+            "status": "published",
             "discovered_at": null,
             "downloaded_at": null,
             "converted_at": null,
             "approved_at": null,
-            "published_at": null,
+            "published_at": "2026-01-28T00:00:00+00:00",
             "pdf_exported_at": null,
             "jira_ticket_key": null,
             "jira_ticket_url": null
@@ -363,12 +363,12 @@
             "jira_ticket_url": null
           },
           "release_notes": {
-            "status": "not_started",
+            "status": "published",
             "discovered_at": null,
             "downloaded_at": null,
             "converted_at": null,
             "approved_at": null,
-            "published_at": null,
+            "published_at": "2026-01-28T00:00:00+00:00",
             "pdf_exported_at": null,
             "jira_ticket_key": null,
             "jira_ticket_url": null
@@ -392,12 +392,12 @@
             "jira_ticket_url": null
           },
           "release_notes": {
-            "status": "not_started",
+            "status": "published",
             "discovered_at": null,
             "downloaded_at": null,
             "converted_at": null,
             "approved_at": null,
-            "published_at": null,
+            "published_at": "2026-01-28T00:00:00+00:00",
             "pdf_exported_at": null,
             "jira_ticket_key": null,
             "jira_ticket_url": null
@@ -421,12 +421,12 @@
             "jira_ticket_url": null
           },
           "release_notes": {
-            "status": "not_started",
+            "status": "published",
             "discovered_at": null,
             "downloaded_at": null,
             "converted_at": null,
             "approved_at": null,
-            "published_at": null,
+            "published_at": "2026-01-28T00:00:00+00:00",
             "pdf_exported_at": null,
             "jira_ticket_key": null,
             "jira_ticket_url": null
@@ -450,12 +450,12 @@
             "jira_ticket_url": null
           },
           "release_notes": {
-            "status": "not_started",
+            "status": "published",
             "discovered_at": null,
             "downloaded_at": null,
             "converted_at": null,
             "approved_at": null,
-            "published_at": null,
+            "published_at": "2026-01-28T00:00:00+00:00",
             "pdf_exported_at": null,
             "jira_ticket_key": null,
             "jira_ticket_url": null
@@ -475,12 +475,12 @@
             "jira_ticket_url": null
           },
           "release_notes": {
-            "status": "not_started",
+            "status": "published",
             "discovered_at": null,
             "downloaded_at": null,
             "converted_at": null,
             "approved_at": null,
-            "published_at": null,
+            "published_at": "2026-01-28T00:00:00+00:00",
             "pdf_exported_at": null,
             "jira_ticket_key": null,
             "jira_ticket_url": null
@@ -504,12 +504,12 @@
             "jira_ticket_url": null
           },
           "release_notes": {
-            "status": "not_started",
+            "status": "published",
             "discovered_at": null,
             "downloaded_at": null,
             "converted_at": null,
             "approved_at": null,
-            "published_at": null,
+            "published_at": "2026-01-28T00:00:00+00:00",
             "pdf_exported_at": null,
             "jira_ticket_key": null,
             "jira_ticket_url": null
@@ -529,12 +529,12 @@
             "jira_ticket_url": null
           },
           "release_notes": {
-            "status": "not_started",
+            "status": "published",
             "discovered_at": null,
             "downloaded_at": null,
             "converted_at": null,
             "approved_at": null,
-            "published_at": null,
+            "published_at": "2026-01-28T00:00:00+00:00",
             "pdf_exported_at": null,
             "jira_ticket_key": null,
             "jira_ticket_url": null
@@ -558,12 +558,12 @@
             "jira_ticket_url": null
           },
           "release_notes": {
-            "status": "not_started",
+            "status": "published",
             "discovered_at": null,
             "downloaded_at": null,
             "converted_at": null,
             "approved_at": null,
-            "published_at": null,
+            "published_at": "2026-01-28T00:00:00+00:00",
             "pdf_exported_at": null,
             "jira_ticket_key": null,
             "jira_ticket_url": null
@@ -583,12 +583,12 @@
             "jira_ticket_url": null
           },
           "release_notes": {
-            "status": "not_started",
+            "status": "published",
             "discovered_at": null,
             "downloaded_at": null,
             "converted_at": null,
             "approved_at": null,
-            "published_at": null,
+            "published_at": "2026-01-28T00:00:00+00:00",
             "pdf_exported_at": null,
             "jira_ticket_key": null,
             "jira_ticket_url": null
@@ -608,12 +608,12 @@
             "jira_ticket_url": null
           },
           "release_notes": {
-            "status": "not_started",
+            "status": "published",
             "discovered_at": null,
             "downloaded_at": null,
             "converted_at": null,
             "approved_at": null,
-            "published_at": null,
+            "published_at": "2026-01-28T00:00:00+00:00",
             "pdf_exported_at": null,
             "jira_ticket_key": null,
             "jira_ticket_url": null

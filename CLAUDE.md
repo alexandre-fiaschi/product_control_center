@@ -87,7 +87,7 @@ Release notes flow: raw doc downloaded from SFTP → converted into CAE branded 
 - **Auth:** Basic Auth with classic API token (no scopes) — scoped tokens don't work
 - **Project:** `CFSSOCP` (id=10008), Issue type: `10163` ("Release notes, documents & binaries")
 - **Search API:** `POST /rest/api/3/search/jql` — old `/search` endpoint removed (HTTP 410)
-- **New/existing detection:** JQL `project = CFSSOCP AND cf[10563] ~ "{version}"` (Release Name field)
+- **New/existing detection:** JQL `project = CFSSOCP AND cf[10563] = "Version {version}"` (Release Name field)
 - **Delete via API:** Not available (403) — must delete manually
 - **Ticket creation + attachment:** Confirmed working
 

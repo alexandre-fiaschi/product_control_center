@@ -316,7 +316,7 @@ not_started → discovered → downloaded → converted → pending_approval →
 2. Set binaries.status = "approved", approved_at = now
 3. Zip the patch folder → patches/{PRODUCT_ID}/{PATCH_ID}/{PATCH_ID}.zip
 4. Determine new/existing release folder:
-   - JQL: project = CFSSOCP AND cf[10563] ~ "Version {version}"
+   - JQL: project = CFSSOCP AND cf[10563] = "Version {version}"
    - No results → "New CAE Portal Release"
    - Has results → "Existing CAE Portal Release"
 5. Create Jira ticket:
@@ -356,7 +356,7 @@ not_started → discovered → downloaded → converted → pending_approval →
 Both approve workflows use the same Jira detection:
 
 ```
-1. Search JQL: project = CFSSOCP AND cf[10563] ~ "Version {version}"
+1. Search JQL: project = CFSSOCP AND cf[10563] = "Version {version}"
    (e.g., "Version 8.1.12")
 2. If 0 results → this is the first patch for this version:
    - create_update_remove = "New CAE Portal Release"

@@ -9,11 +9,11 @@
           "sftp_path": "/ACARS_V8_0/8_0_28/8_0_28_0",
           "local_path": "patches/ACARS_V8_0/8.0.28.0",
           "binaries": {
-            "status": "pending_approval",
+            "status": "published",
             "discovered_at": "2026-04-03T17:01:12.384407+00:00",
             "downloaded_at": "2026-04-03T17:01:12.674182+00:00",
             "approved_at": null,
-            "published_at": null,
+            "published_at": "2026-02-02T00:00:00+00:00",
             "jira_ticket_key": null,
             "jira_ticket_url": null
           },
@@ -34,21 +34,21 @@
           "sftp_path": "/ACARS_V8_0/8_0_28/8_0_28_1",
           "local_path": "patches/ACARS_V8_0/8.0.28.1",
           "binaries": {
-            "status": "pending_approval",
+            "status": "published",
             "discovered_at": "2026-04-03T17:01:12.384407+00:00",
             "downloaded_at": "2026-04-03T17:01:12.674182+00:00",
             "approved_at": null,
-            "published_at": null,
+            "published_at": "2026-02-02T00:00:00+00:00",
             "jira_ticket_key": null,
             "jira_ticket_url": null
           },
           "release_notes": {
-            "status": "not_started",
+            "status": "published",
             "discovered_at": null,
             "downloaded_at": null,
             "converted_at": null,
             "approved_at": null,
-            "published_at": null,
+            "published_at": "2025-12-10T00:00:00+00:00",
             "pdf_exported_at": null,
             "jira_ticket_key": null,
             "jira_ticket_url": null

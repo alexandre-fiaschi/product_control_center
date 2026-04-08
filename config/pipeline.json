@@ -41,7 +41,7 @@
       "issue_type_name": "Release notes, documents & binaries",
       "auth_method": "basic_classic_token",
       "search_endpoint": "/rest/api/3/search/jql",
-      "existing_detection_jql": "project = CFSSOCP AND cf[10563] ~ \"{version}\"",
+      "existing_detection_jql": "project = CFSSOCP AND cf[10563] = \"Version {version}\"",
       "fields": {
         "client": {
           "id": "customfield_10328",
