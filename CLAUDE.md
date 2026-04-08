@@ -53,7 +53,7 @@ OpsCommDocsPipeline/
 ├── FRONTEND_WORKFLOWS.md          # Frontend reference — API responses, UI mockups, rendering rules
 ├── CLAUDE.md                     # This file — project overview for Claude
 ├── PROGRESS.md                   # What's been done, what's next
-├── HANDOFF_JIRA_INTEGRATION.md   # Jira integration handoff — fields, endpoints, findings
+├── HANDOFF.md                    # Implementation handoff — Jira reference, backend build blocks, known issues
 ├── PLAN_RESTRUCTURE.md           # Plan to split into backend/ + frontend/
 ├── OpsComm Pipeline - Project Documentation.md  # Original project documentation
 ├── product-control-center-mockup.jsx  # React UI mockup (60KB, full dashboard reference)

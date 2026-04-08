@@ -114,10 +114,9 @@ OpsCommDocsPipeline/
 │   └── requirements.txt
 ├── frontend/
 │   ├── src/
-│   │   ├── app/                       # Next.js App Router
-│   │   │   ├── layout.tsx
-│   │   │   ├── page.tsx               # Dashboard
-│   │   │   └── patches/               # Patch list + detail
+│   │   ├── views/                     # View components (useState switching, no router)
+│   │   │   ├── Dashboard.tsx          # Dashboard view
+│   │   │   └── Pipeline.tsx           # Pipeline view (actionable + history)
 │   │   ├── components/
 │   │   │   ├── layout/                # Sidebar, Header
 │   │   │   ├── patches/               # PatchCard, StatusBadge
@@ -146,6 +145,8 @@ OpsCommDocsPipeline/
 ## State Tracking (JSON Files)
 
 No database for now. State lives in JSON files under `state/`, one file per product line.
+
+**Source of truth for the state model:** The existing tracker JSON files under `state/patches/` (e.g., `ACARS_V8_1.json`) define the canonical state structure — each patch has separate `binaries` and `release_notes` sub-objects. Note that `scripts/test_sftp.py` uses an older flat model (single `status` field per patch) — this is outdated and should NOT be used as reference when building the backend. Always follow the structure in the tracker files.
 
 ### Pipeline Config: `config/pipeline.json`
 
@@ -264,15 +265,15 @@ not_started → discovered → downloaded → converted → pending_approval →
 ### Approve & Publish
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/patches/{product_id}/{patch_id}/binaries/approve` | Approve binaries → zip → Jira ticket → attach .zip → published |
-| POST | `/api/patches/{product_id}/{patch_id}/docs/approve` | Approve docs → export PDF → Jira ticket → attach .pdf → published |
+| POST | `/api/patches/{product_id}/{patch_id}/binaries/approve` | With Jira fields → full flow (zip → Jira → publish). Empty body → mark published (skip Jira) |
+| POST | `/api/patches/{product_id}/{patch_id}/docs/approve` | With Jira fields → full flow (PDF → Jira → publish). Empty body → mark published (skip Jira) |
 
 ### Dashboard
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/dashboard/summary` | Counts by status for both pipelines across all products |
 
-**10 endpoints total.** Scan auto-downloads and auto-converts. Approve auto-publishes to Jira.
+**10 endpoints total.** Scan auto-downloads and auto-converts. Approve with payload → creates Jira ticket. Approve with empty body → marks as published directly (for backlog patches already on the portal).
 
 ---
 
@@ -317,42 +318,48 @@ not_started → discovered → downloaded → converted → pending_approval →
 ```
 1. Validate binaries.status == "pending_approval" (reject otherwise)
 2. Set binaries.status = "approved", approved_at = now
-3. Zip the patch folder → patches/{PRODUCT_ID}/{PATCH_ID}/{PATCH_ID}.zip
-4. Determine new/existing release folder:
+3. **Save tracker JSON (atomic write)** — persists "approved" to disk before any external calls
+4. Zip the patch folder → patches/{PRODUCT_ID}/{PATCH_ID}/{PATCH_ID}.zip
+5. Determine new/existing release folder:
    - JQL: project = CFSSOCP AND cf[10563] = "Version {version}"
    - No results → "New CAE Portal Release"
    - Has results → "Existing CAE Portal Release"
-5. Create Jira ticket:
+6. Create Jira ticket:
    - Summary: "Add Release Version {patch_id}"
    - All required fields from config/pipeline.json
-6. Attach .zip to Jira ticket
-7. Set binaries.status = "published", published_at = now
-8. Store jira_ticket_key + jira_ticket_url in tracker
-9. Save tracker JSON (atomic write)
+7. Attach .zip to Jira ticket
+8. Set binaries.status = "published", published_at = now
+9. Store jira_ticket_key + jira_ticket_url in tracker
+10. **Save tracker JSON (atomic write)** — persists "published" + Jira link to disk
 ```
 
-**On error (e.g., Jira fails):** status stays at "approved", error returned. Retry will re-attempt from step 3.
+**Two-step save:** The tracker is saved twice — once after approval (step 3) and once after publishing (step 10). This ensures that if Jira fails at step 5-7, the patch remains at "approved" on disk and can be retried without re-approving.
+
+**On error (e.g., Jira fails):** status is "approved" on disk, error returned to frontend. Retry will re-attempt from step 4.
 
 ### Approve Docs Workflow (`POST /api/patches/{product_id}/{patch_id}/docs/approve`)
 
 ```
 1. Validate release_notes.status == "pending_approval" (reject otherwise)
 2. Set release_notes.status = "approved", approved_at = now
-3. Export .docx → PDF
+3. **Save tracker JSON (atomic write)** — persists "approved" to disk before any external calls
+4. Export .docx → PDF
    - Input:  patches/{PRODUCT_ID}/{PATCH_ID}/release_notes.docx
    - Output: patches/{PRODUCT_ID}/{PATCH_ID}/release_notes.pdf
-4. Set release_notes.status = "pdf_exported", pdf_exported_at = now
-5. Determine new/existing release folder (same JQL as binaries)
-6. Create Jira ticket:
+5. Set release_notes.status = "pdf_exported", pdf_exported_at = now
+6. Determine new/existing release folder (same JQL as binaries)
+7. Create Jira ticket:
    - Summary: "Add Release notes {patch_id}"
    - All required fields from config/pipeline.json
-7. Attach .pdf to Jira ticket
-8. Set release_notes.status = "published", published_at = now
-9. Store jira_ticket_key + jira_ticket_url in tracker
-10. Save tracker JSON (atomic write)
+8. Attach .pdf to Jira ticket
+9. Set release_notes.status = "published", published_at = now
+10. Store jira_ticket_key + jira_ticket_url in tracker
+11. **Save tracker JSON (atomic write)** — persists "published" + Jira link to disk
 ```
 
-**On error (e.g., PDF export fails):** status stays at the step that failed, error returned. Retry re-attempts from that step.
+**Two-step save:** Same pattern as binaries — save after approval (step 3) and after publishing (step 11). If PDF export or Jira fails, the patch remains at "approved" on disk.
+
+**On error (e.g., PDF export fails):** status is "approved" on disk, error returned. Retry re-attempts from step 4.
 
 ### Shared: New/Existing Release Folder Logic
 
@@ -366,6 +373,30 @@ Both approve workflows use the same Jira detection:
 3. If 1+ results → version folder already exists on portal:
    - create_update_remove = "Existing CAE Portal Release"
 ```
+
+### Approval UX Workflow
+
+The user approves **one patch at a time** through the Jira Approval Modal:
+
+**Normal flow (new to portal):**
+1. User clicks "Approve Bin" (or "Approve Docs") on a patch row in the Pipeline view
+2. JiraApprovalModal opens — pre-filled with default field values from `config/pipeline.json`
+3. User reviews/edits fields (summary, client, environment, release name, etc.)
+4. User clicks "Approve & Create Jira Ticket"
+5. Button shows spinner + "Creating ticket..." — **modal stays open** during the request
+6. On success: modal shows the Jira ticket link (clickable), then user closes the modal
+7. On error: modal stays open with error message, user can retry without re-entering fields
+8. User moves to the next patch and repeats
+
+**Already on portal flow (skip Jira):**
+1. User clicks "Approve Bin" (or "Approve Docs") on a patch row
+2. JiraApprovalModal opens
+3. User sees the patch is already published on the portal (e.g., old backlog patches)
+4. User clicks "Mark as Published" — sends empty body to the same approve endpoint
+5. Backend sees empty payload → skips zip/Jira, sets status to `published` directly
+6. Modal closes
+
+This handles the initial backlog where many patches were already manually published before the pipeline existed.
 
 ### Tracker State — Append-Only
 
@@ -416,7 +447,7 @@ SFTP is the first integration. Future integrations (Jira, email, PM tools) follo
 - SFTP integration (paramiko connector + scanner)
 - Binaries pipeline (fetch + verify)
 - Manual approval workflow via API/UI
-- Minimal Next.js dashboard (products, patches, approve/publish)
+- Minimal React + Vite dashboard (products, patches, approve/publish)
 - Docker Compose (backend + frontend, no DB)
 - Docs pipeline stubbed (no DOC/ on SFTP yet)
 

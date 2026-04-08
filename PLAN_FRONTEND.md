@@ -87,7 +87,8 @@ A fully functional React mockup already exists (`product-control-center-mockup.j
 **API call (on submit):**
 - `POST /api/patches/{product_id}/{patch_id}/binaries/approve` — for binaries
 - `POST /api/patches/{product_id}/{patch_id}/docs/approve` — for docs
-- Request body: all editable field values (summary, client, environment, product name, release name, release type, create/update/remove, description)
+- With Jira fields in body → full flow (zip/PDF → Jira ticket → publish)
+- With empty body → mark as published directly (skip Jira)
 
 **What it shows:**
 - Header: blue gradient for binaries, purple for docs
@@ -98,7 +99,12 @@ A fully functional React mockup already exists (`product-control-center-mockup.j
 - Attachment preview: `{patch_id}.zip` or `{patch_id}.pdf`
 - New/existing folder logic callout (yellow banner)
 - "Modified" indicators on changed fields
-- Footer: Cancel, Preview JSON Payload, Approve & Create Jira Ticket
+- "Already available on portal" toggle — when ON, skips Jira and shows green "Mark as Approved & Published" button instead
+- Footer: Cancel + either "Approve & Create Jira Ticket" (toggle OFF) or "Mark as Approved & Published" (toggle ON)
+
+**Two flows from the same modal:**
+1. **Normal (toggle OFF):** user reviews fields → clicks "Approve & Create Jira Ticket" → spinner → Jira link returned → close modal
+2. **Already on portal (toggle ON):** user sees patch is already live → clicks "Mark as Approved & Published" → sends empty body → status set to published → close modal
 
 **From mockup:** `JiraApprovalModal` component (lines 141–363), `FieldRowStatic`, `EditFieldRow`, `FIELD_OPTIONS`.
 
@@ -522,5 +528,5 @@ frontend/src/__tests__/
 └── PatchTable.test.tsx         # Filters, sorting, empty states
 ```
 
-Dependencies: `vitest` + `@testing-library/react` (comes with create-next-app).
+Dependencies: `vitest` + `@testing-library/react`.
 Not required for MVP — add when the app stabilizes.

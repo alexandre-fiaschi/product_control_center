@@ -87,4 +87,4 @@
 | `scripts/test_jira.py` | Jira connection dry run (auth + fields + payload) |
 | `scripts/create_jira_ticket.py` | Creates real Jira ticket + attachment for a patch ID |
 | `scripts/sftp_snapshot_MAX_DEPTH2.txt` | Full SFTP tree snapshot |
-| `HANDOFF_JIRA_INTEGRATION.md` | Jira integration handoff document |
+| `HANDOFF.md` | Implementation handoff — Jira reference, backend build blocks, known issues |

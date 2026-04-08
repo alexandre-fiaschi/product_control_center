@@ -120,14 +120,14 @@ OpsCommDocsPipeline/
 ├── ARCHITECTURE.md
 ├── PROGRESS.md
 ├── FRONTEND_WORKFLOWS.md
-└── HANDOFF_JIRA_INTEGRATION.md
+└── HANDOFF.md
 ```
 
 ---
 
 ## Decisions
 
-- **Frontend:** use `npx create-next-app` for full scaffold
+- **Frontend:** use `npm create vite@latest frontend -- --template react-ts` for scaffold
 - **Scripts:** keep `scripts/` as reference after extraction
 - **Backend:** extract real working code from scripts (not stubs)
 
@@ -162,8 +162,8 @@ OpsCommDocsPipeline/
 
 | Mockup Section | Destination |
 |----------------|-------------|
-| Dashboard view + pie charts | `frontend/src/app/page.tsx` |
-| Patch list + status badges | `frontend/src/app/patches/page.tsx` + `components/patches/` |
+| Dashboard view + pie charts | `frontend/src/views/Dashboard.tsx` |
+| Patch list + status badges | `frontend/src/views/Pipeline.tsx` + `components/patches/` |
 | JiraApprovalModal component | `frontend/src/components/patches/JiraApprovalModal.tsx` |
 | Dark theme tokens (`dk` object) | `frontend/tailwind.config.ts` theme extension |
 | Status config + colors | `frontend/src/lib/constants.ts` |
