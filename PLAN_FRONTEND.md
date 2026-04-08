@@ -440,10 +440,10 @@ sonner                          — toast notifications
 10. ✅ Built `Dashboard.tsx` — summary card, tracked products card, quick actionable table (top 5)
 11. ✅ Wired to `lib/api.ts` with React Query (getDashboardSummary + getPatches)
 
-### Block F3: Pipeline View (medium)
-12. Build `Pipeline.tsx` (mockup lines 748–886) — filter bar (search, product dropdown, status dropdown), actionable table, collapsible history table
-13. Build `PatchTable.tsx` — reusable table component with status badges + action buttons
-14. Wire filter logic from mockup `filteredActionable`/`filteredHistory`
+### Block F3: Pipeline View (medium) ✅
+12. ✅ Built `Pipeline.tsx` — filter bar, actionable table, collapsible history table
+13. ✅ Skipped separate `PatchTable.tsx` — tables have different columns, kept inline
+14. ✅ Wired filter logic (product, status, search) + URL param from Dashboard navigation
 
 ### Block F4: Modals + Actions (large — core interaction)
 15. Build `PatchDetailModal.tsx` (mockup lines 402–506) — two-column timeline view, `TimelineStep` subcomponent, approve buttons

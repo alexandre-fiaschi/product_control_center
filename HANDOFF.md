@@ -96,19 +96,26 @@ frontend/src/
         └── Td.tsx              # Table data cell
 ```
 
-### Block F3: Pipeline View (medium)
+### Block F3: Pipeline View (medium) ✅
 
 Main working view with filter bar, actionable patch table, collapsible history section.
 
-**Files to create:**
+**Files created/modified:**
 ```
 frontend/src/
 ├── views/
-│   └── Pipeline.tsx            # Filter bar + actionable/history tables (mockup lines 748–886)
-└── components/
-    └── patches/
-        └── PatchTable.tsx      # Reusable table with status badges + action buttons
+│   └── Pipeline.tsx            # Filter bar + actionable/history tables
+├── components/
+│   └── shared/
+│       └── Td.tsx              # Added `small` prop
+└── App.tsx                     # Replaced placeholder with Pipeline import
 ```
+
+**Design decisions:**
+- No separate `PatchTable.tsx` — actionable and history tables have different column structures, kept inline in `Pipeline.tsx`
+- Action buttons show 3 states: active (pending_approval), greyed out/disabled (before pending), hidden (published)
+- Product filter reads URL param from Dashboard navigation (`?product=...`)
+- Product column commented out (single product for now, ready to re-enable)
 
 ### Block F4: Modals + Actions (large)
 
@@ -152,7 +159,7 @@ cd frontend && npx playwright test         # E2E tests
 |-------|------|------|------------|--------|
 | F1 | Scaffold + Shared Code | Small | Backend complete | ✅ Done |
 | F2 | Layout + Dashboard | Medium | F1 | ✅ Done |
-| F3 | Pipeline View | Medium | F2 | |
+| F3 | Pipeline View | Medium | F2 | ✅ Done |
 | F4 | Modals + Actions | Large | F3 | |
 | F5 | Polish | Small | F4 | |
 | F6 | Testing | Medium | F5 | |

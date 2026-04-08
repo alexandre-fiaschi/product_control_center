@@ -6,15 +6,16 @@ interface TdProps {
   mono?: boolean;
   bold?: boolean;
   muted?: boolean;
+  small?: boolean;
   align?: "left" | "right";
   nowrap?: boolean;
 }
 
-export default function Td({ children, mono, bold, muted, align, nowrap }: TdProps) {
+export default function Td({ children, mono, bold, muted, small, align, nowrap }: TdProps) {
   return (
     <td
       className={[
-        "px-4 py-3 text-sm",
+        small ? "px-4 py-3 text-xs" : "px-4 py-3 text-sm",
         mono && "font-mono",
         nowrap && "whitespace-nowrap",
         align === "right" ? "text-right" : "text-left",
