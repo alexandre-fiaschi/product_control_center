@@ -166,19 +166,9 @@ frontend/src/
 - PatchDetailModal has its own inline error since it's a modal (toast alone isn't enough context)
 - Jira approval modal stays in dry-run mode (deferred to separate block)
 
-### Block F6: Testing (medium)
+### Block F6: Testing (medium) — DEFERRED
 
-**Component tests (Vitest + React Testing Library):**
-- StatusBadge, PatchTable, JiraApprovalModal, PatchDetailModal, API client
-
-**End-to-end tests (Playwright):**
-- Full scan flow, approve with/without Jira, error handling, modal interactions, filter interactions
-
-**Commands:**
-```bash
-cd frontend && npm test                    # component tests
-cd frontend && npx playwright test         # E2E tests
-```
+Frontend testing deferred — backend tests (121 passing) + logging provide sufficient coverage for MVP. Full plan saved in `PLAN_FRONTEND_TESTING.md` for when frontend tests are needed (Vitest + RTL for components, Playwright for E2E).
 
 ---
 
@@ -191,7 +181,7 @@ cd frontend && npx playwright test         # E2E tests
 | F3 | Pipeline View | Medium | F2 | ✅ Done |
 | F4 | Modals + Actions | Large | F3 | ✅ Done |
 | F5 | Polish | Small | F4 | ✅ Done |
-| F6 | Testing | Medium | F5 | |
+| F6 | Testing | Medium | F5 | Deferred |
 
 ### Git flow per block
 
