@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     JIRA_API_TOKEN_NO_SCOPES: str = ""
     JIRA_PROJECT_KEY: str = ""
 
+    # Zendesk (release-notes scraper — see PLAN_DOCS_PIPELINE.md unit 3)
+    ZENDESK_SUBDOMAIN: str = ""
+    ZENDESK_EMAIL: str = ""
+    ZENDESK_PASSWORD: str = ""
+
     # Loaded from pipeline.json
     pipeline_config: dict[str, Any] = {}
 

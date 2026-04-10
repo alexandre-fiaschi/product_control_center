@@ -37,6 +37,8 @@ class ReleaseNotesState(BaseModel):
     pdf_exported_at: datetime | None = None
     jira_ticket_key: str | None = None
     jira_ticket_url: str | None = None
+    source_pdf_path: str | None = None
+    source_url: str | None = None
     last_run: LastRun = LastRun()
 
 

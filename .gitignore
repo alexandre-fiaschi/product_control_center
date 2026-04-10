@@ -7,3 +7,4 @@ scripts/dry_run_output.txt
 .DS_Store
 logs/
 docs_example/
+/patches/

@@ -21,6 +21,13 @@
         "track_from": "7_3_27_0"
       }
     },
+    "docs": {
+      "enabled": false,
+      "zendesk": {
+        "subdomain": "cyberjetsupport",
+        "category_url": "https://cyberjetsupport.zendesk.com/hc/en-gb/categories/360000515774-Release-Note"
+      }
+    },
     "patch_lifecycle": {
       "binaries": {
         "statuses": ["discovered", "downloaded", "pending_approval", "approved", "published"],

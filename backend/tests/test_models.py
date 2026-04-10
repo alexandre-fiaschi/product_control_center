@@ -108,15 +108,18 @@ def test_legacy_json_lazy_migration(sample_tracker_json):
     reason="no real state files in state/patches/",
 )
 def test_real_state_files_load():
-    # Every real state/patches/*.json file must load cleanly with default last_run
-    # on every patch, and survive a semantic round-trip (parse → dump → parse).
+    # Every real state/patches/*.json file must parse cleanly and survive a
+    # semantic round-trip (parse → dump → parse). last_run.state can be any
+    # valid LastRun state on disk — patches that have actually been executed
+    # by the orchestrator will carry "success" or "failed", which is correct.
+    valid_run_states = {"idle", "running", "success", "failed"}
     for json_file in sorted(STATE_PATCHES_DIR.glob("*.json")):
         raw = json_file.read_text()
         tracker = ProductTracker.model_validate_json(raw)
         for version in tracker.versions.values():
             for patch in version.patches.values():
-                assert patch.binaries.last_run.state == "idle"
-                assert patch.release_notes.last_run.state == "idle"
+                assert patch.binaries.last_run.state in valid_run_states
+                assert patch.release_notes.last_run.state in valid_run_states
         dumped = tracker.model_dump(mode="json")
         reloaded = ProductTracker.model_validate(dumped)
         assert reloaded.product_id == tracker.product_id
