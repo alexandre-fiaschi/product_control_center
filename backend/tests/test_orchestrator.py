@@ -74,6 +74,14 @@ class TestRunScanProduct:
         assert result["failed"] == 0
         mock_save.assert_called_once()
 
+        # Unit 2: binaries.last_run must be populated with a success record.
+        patch_entry = tracker.versions["8.1.0"].patches["8.1.0.0"]
+        assert patch_entry.binaries.last_run.state == "success"
+        assert patch_entry.binaries.last_run.started_at is not None
+        assert patch_entry.binaries.last_run.finished_at is not None
+        assert patch_entry.binaries.last_run.step is None
+        assert patch_entry.binaries.last_run.error is None
+
     @patch("app.services.orchestrator.save_tracker")
     @patch("app.services.orchestrator.download_patch", side_effect=IOError("permission denied"))
     @patch("app.services.orchestrator.settings")
@@ -118,6 +126,13 @@ class TestRunScanProduct:
         patch_entry = tracker.versions["8.1.0"].patches["8.1.0.0"]
         assert patch_entry.binaries.status == "discovered"
         mock_save.assert_called_once()
+
+        # Unit 2: the failure must be recorded on binaries.last_run.
+        assert patch_entry.binaries.last_run.state == "failed"
+        assert patch_entry.binaries.last_run.step == "download"
+        assert patch_entry.binaries.last_run.error is not None
+        assert "permission denied" in patch_entry.binaries.last_run.error
+        assert patch_entry.binaries.last_run.finished_at is not None
 
     @patch("app.services.orchestrator.save_tracker")
     @patch("app.services.orchestrator.update_tracker", return_value=[])

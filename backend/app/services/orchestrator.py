@@ -8,6 +8,7 @@ from app.config import settings
 from app.integrations.sftp.connector import SFTPConnector
 from app.integrations.sftp.scanner import discover_patches, update_tracker
 from app.pipelines.binaries.fetcher import download_patch
+from app.services.lifecycle import run_cell
 from app.state.manager import load_tracker, save_tracker
 
 logger = logging.getLogger("services.orchestrator")
@@ -66,24 +67,27 @@ def run_scan_product(conn: SFTPConnector, product_id: str, product_cfg: dict) ->
             if patch_id not in version_data.patches:
                 continue
             patch = version_data.patches[patch_id]
-            try:
-                download_patch(
+            ok = run_cell(
+                patch.binaries,
+                lambda p=patch: download_patch(
                     conn,
-                    patch.sftp_path,
+                    p.sftp_path,
                     str(settings.patches_dir / product_id / patch_id),
                     product_id=product_id,
                     version=patch_id,
-                )
+                ),
+                step_name="download",
+                product=product_id,
+                version=patch_id,
+            )
+            if ok:
                 patch.binaries.status = "downloaded"
                 patch.binaries.downloaded_at = datetime.now(timezone.utc)
                 patch.binaries.status = "pending_approval"
                 downloaded += 1
-            except Exception:
+            elif patch.binaries.last_run.state == "failed":
                 failed += 1
-                logger.error(
-                    "binaries.download.failed product=%s version=%s",
-                    product_id, patch_id, exc_info=True,
-                )
+            # else: lock-skip (cell already running) — not counted as a failure
             break
 
     # Save tracker
