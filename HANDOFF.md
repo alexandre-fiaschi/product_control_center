@@ -1,9 +1,9 @@
 # Implementation Handoff
 
-**Date:** 2026-04-08 (last updated 2026-04-10)
+**Date:** 2026-04-08 (last updated 2026-04-11)
 **Author:** Alexandre Fiaschi (assisted by Claude Code)
 
-**Status:** Backend complete (5 blocks, 121 tests). Frontend complete F1–F5 (F6 testing deferred). Next phase is the **docs pipeline** — design in [PLAN_DOCS_PIPELINE.md](PLAN_DOCS_PIPELINE.md). Read that doc before starting any docs-pipeline work.
+**Status:** Backend complete (5 blocks, 121 tests). Frontend complete F1–F5 (F6 testing deferred). Docs pipeline in progress: Units 0–3 done; **Unit 4 (Block B prototype) shipped first iteration on 2026-04-11 — quality still below acceptable workflow, verdict deferred, more iterations needed before Unit 5.** Design in [PLAN_DOCS_PIPELINE.md](PLAN_DOCS_PIPELINE.md). Read that doc before starting any docs-pipeline work.
 
 ---
 
@@ -36,6 +36,48 @@ The release-notes scraper for `cyberjetsupport.zendesk.com` lives at `scripts/te
 - **Version cutoff** — current iteration only fetches 8.1 articles ≥ `8.1.10` (default). 7.3 / 8.0 cutoffs are unset until product team confirms.
 
 Run `python scripts/test_zendesk_scraper.py --check-auth --verbose` to verify auth without crawling. See the script docstring for full CLI usage.
+
+---
+
+## DOCX Conversion Prototype Gotchas (Unit 4 — Block B, in progress)
+
+Standalone PDF → CAE-templated DOCX prototype at `scripts/test_docx_conversion.py`. First iteration shipped 2026-04-11. **Quality is below acceptable workflow** — the script is checked in but Unit 5 (production wiring) is blocked until iterations close the remaining gaps. Non-obvious traps:
+
+- **Java 21 required, not on PATH by default.** opendataloader-pdf calls a Java CLI under the hood. On Alex's macOS, Java 21 lives at `/opt/homebrew/opt/openjdk@21` but the system stub at `/usr/bin/java` shadows it. Always export before running:
+  ```bash
+  export JAVA_HOME=/opt/homebrew/opt/openjdk@21
+  export PATH="$JAVA_HOME/bin:$PATH"
+  ```
+  Without this you get `Unable to locate a Java Runtime`. Worth adding to `~/.zshrc` permanently.
+
+- **Two extraction backends, NEITHER is Claude.** `--mode fast` is the local Java extractor; `--mode hybrid` talks to a local server (`opendataloader-pdf-hybrid --port 5002`) that runs **IBM Docling**, not Claude. opendataloader-pdf 2.2.1 has no Claude integration despite the speculative `test_hybrid_claude` reference test in `backend/tests/test_pdf_extraction.py`. The `hybrid` parameter only accepts `off` or `docling-fast`. If we want a real Claude pass we have to build it ourselves against the Anthropic SDK.
+
+- **fast mode reorders content past images.** fast's JSON walks paragraphs first then images, so an image belonging to AM3394 ends up rendered below AM3030 in the body. Cannot be fixed in the converter — the source ordering is already wrong. Use `--mode hybrid` for any PDF where image-to-paragraph anchoring matters.
+
+- **hybrid mode runs OCR over every embedded screenshot.** Docling extracts UI labels, dialog buttons, form fields, table cells from screenshots and emits them as flat sibling paragraphs. ~110+ noise paragraphs per release note. The converter drops them via spatial overlap: any text element whose bbox center sits inside an image's bbox on the same page is filtered. See `collect_image_bboxes` + `is_inside_image`.
+
+- **hybrid mode does NOT classify page headers/footers.** The CAE corporate band ("Jetsched Communications Release Note", "AIR TRANSPORT INFORMATION SYSTEMS", "SAS CYBERJET …", "Page X sur N") and bare metadata fragments (version triple, MM/YYYY date) get emitted as body paragraphs and have to be filtered by content patterns. See `PAGE_CHROME_PHRASES` / `PAGE_CHROME_RE`.
+
+- **The Cyberjet logo is on every page** (~72×72pt at top-left, y_top ≈ 760) and gets emitted as a body image. Filtered by `is_page_header_logo` (top-of-page position + small bbox). Logo bboxes are EXCLUDED from the OCR-noise filter so we don't accidentally drop real text just below the logo band.
+
+- **Heading levels MUST be pattern-driven, not extractor-driven.** Both backends mis-classify heading levels (fast judges by font size, hybrid by ML layout). The script overrides extractor decisions for known release-notes structures via `classify_release_note_line`:
+  - Section names ("Release Features", "Defect Fixes", "Not Tested", …) → `Heading 1`
+  - `AM\d{2,5}[:\-]` lines → `Heading 2`
+  - "Bug Description:" / "After correction:" / "Steps to reproduce:" → **bold body text**, NOT a heading style. They appear inline under their AM item but DO NOT show in the Word TOC field (only Heading 1/2/3 feed it). See `is_am_subheading` + `add_bold_body_paragraph`.
+
+- **The Word TOC field rebuilds itself, we don't.** The Flightscape template's TOC is an OOXML complex field with cached entries pointing at the original example chapters. We mark its begin `<w:fldChar>` `w:dirty="1"` (`mark_toc_dirty`) and Word offers to update fields when the document is opened. Or right-click → Update Field → Update entire table. We do NOT try to programmatically replace TOC entries — that breaks the field's internal `_Toc####` bookmarks.
+
+- **Cover page strategy: clone-and-fill, not placeholder substitution.** The Flightscape template has 33 named styles but NO `{{placeholder}}` markers. Cover-page artwork (paragraphs 0–37) is preserved untouched, including all `<w:drawing>`, `<w:pict>` and `<w:txbxContent>` elements anchored to those paragraphs. Body content (paragraphs 38+) and example tables are stripped. Cover-page text-box clutter ("If this is your first time…", "Click this text box and delete it", "Update Customer Name…") is wiped via a `<w:txbxContent>` walk because python-docx hides text boxes from `doc.paragraphs`.
+
+- **Cover-page text run substitution is exact-match only.** The text runs we replace ("Sample Product Name", "Version #", "Date", "Customer", "External Business Document") are matched literally against `<w:t>` element contents. If the template ever changes those literals, the cover-page metadata will silently revert to the template defaults — verify by inspection after any template update.
+
+- **Output cache lives outside git.** `docs_example/conversion_prototype/.cache/{fast,hybrid}/<stem>.json` + `<stem>_images/` are reused on subsequent runs unless `--no-cache` is passed. The whole `docs_example/` tree is gitignored. The script also drops `<output>.md` next to `<output>.docx` so reviewers can see the raw extractor markdown.
+
+- **Test data reality.** Only V8.1 PDFs exist locally (`patches/ACARS_V8_1/{8.1.11.0,8.1.11.2,8.1.12.0,8.1.12.1,8.1.12.2}/release_notes/`). V7.3 / V8.0 family-difference checks deferred. The 5 V8.0 PDFs in `docs_example/pdf_examples/8.0/` already have pre-extracted fast-mode JSON in `extracted/fast/` — usable via `--json <path>` to exercise the converter without re-running Java.
+
+- **Hybrid server is heavy.** `opendataloader-pdf-hybrid --port 5002` initializes IBM Docling models in ~30s and uses ~1.5 GB RAM. Use `--device mps` on Apple Silicon. Once started, leave it running for the duration of the iteration session. The script auto-detects whether the server is up via a TCP probe and falls back to fast with a clear log line if not.
+
+Run `python scripts/test_docx_conversion.py --pdf <pdf> --output <docx> --mode hybrid --verbose` for one PDF. See the script docstring for full CLI usage.
 
 ---
 
