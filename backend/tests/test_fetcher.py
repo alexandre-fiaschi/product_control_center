@@ -4,6 +4,8 @@ import stat as stat_module
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 from app.pipelines.binaries.fetcher import download_patch
 
 
@@ -24,7 +26,10 @@ class TestDownloadPatch:
         conn.client.get.side_effect = lambda remote, local: Path(local).write_text("data")
 
         local_path = str(tmp_path / "patch")
-        count = download_patch(conn, "/remote/patch", local_path)
+        count = download_patch(
+            conn, "/remote/patch", local_path,
+            product_id="ACARS_V8_1", version="8.1.0.0",
+        )
 
         assert count == 2
         assert (tmp_path / "patch" / "file1.bin").exists()
@@ -42,7 +47,10 @@ class TestDownloadPatch:
         conn.client.listdir_attr.side_effect = listdir_side_effect
         conn.client.get.side_effect = lambda remote, local: Path(local).write_text("data")
 
-        count = download_patch(conn, "/remote/patch", str(tmp_path / "patch"))
+        count = download_patch(
+            conn, "/remote/patch", str(tmp_path / "patch"),
+            product_id="ACARS_V8_1", version="8.1.0.0",
+        )
 
         assert count == 2
         assert (tmp_path / "patch" / "subdir" / "nested.bin").exists()
@@ -52,7 +60,27 @@ class TestDownloadPatch:
         conn = MagicMock()
         conn.client.listdir_attr.return_value = []
 
-        count = download_patch(conn, "/remote/empty", str(tmp_path / "empty"))
+        count = download_patch(
+            conn, "/remote/empty", str(tmp_path / "empty"),
+            product_id="ACARS_V8_1", version="8.1.0.0",
+        )
 
         assert count == 0
         assert (tmp_path / "empty").is_dir()
+
+    def test_propagates_listdir_ioerror(self, tmp_path):
+        """Regression: listdir_attr IOError must propagate so the caller sees the failure.
+
+        Previously the fetcher caught IOError, logged it, and returned 0 — which the
+        orchestrator treated as a successful zero-file download, silently advancing
+        the patch's binaries.status to pending_approval. The fix is to let the
+        exception propagate.
+        """
+        conn = MagicMock()
+        conn.client.listdir_attr.side_effect = IOError("permission denied")
+
+        with pytest.raises(IOError):
+            download_patch(
+                conn, "/remote/patch", str(tmp_path / "patch"),
+                product_id="ACARS_V8_1", version="8.1.0.0",
+            )

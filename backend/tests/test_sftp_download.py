@@ -59,7 +59,7 @@ def test_download_single_patch(tmp_path):
 
     with SFTPConnector(settings) as conn:
         _enable_keepalive(conn)
-        count = download_patch(conn, sftp_path, local_path)
+        count = download_patch(conn, sftp_path, local_path, product_id="ACARS_V8_1", version="8.1.12.0")
 
     assert count > 0, f"Expected files but got {count}"
     actual_files = [f for f in (tmp_path / "8.1.12.0").rglob("*") if f.is_file()]

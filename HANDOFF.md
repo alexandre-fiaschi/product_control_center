@@ -39,6 +39,26 @@ Run `python scripts/test_zendesk_scraper.py --check-auth --verbose` to verify au
 
 ---
 
+## Logging convention
+
+Every backend log line in the pipeline follows one convention so `grep` works everywhere and later units (Zendesk fetcher, converter, scan history) stay consistent with the binaries code.
+
+- **Event naming:** `subsystem.action.outcome`. Examples: `binaries.download.start`, `binaries.download.success`, `binaries.download.failed`, `scan.product.start`, `scan.product.summary`, `scan.summary`.
+- **Payload style:** inline `key=value` pairs in the log message, formatted via `%s` placeholders. Greppable with plain `grep "version=8.1.16.1"` across every layer. Example:
+  ```python
+  logger.info(
+      "binaries.download.success product=%s version=%s files=%d",
+      product_id, version, count,
+  )
+  ```
+- **Standard fields:** `product`, `version` on every pipeline log line. `step` is optional — use it only when a pipeline has named sub-phases (e.g. Zendesk fetch has `login`, `find_article`, `download_pdf`). Binaries has one phase, so `step` is omitted there.
+- **Exceptions:** always use `exc_info=True` so the traceback lands in the rotating file logger. The one-line event message still follows the `subsystem.action.failed` convention.
+- **Summary lines:** every pass (binaries, docs fetch, converter) emits a per-patch outcome line *and* a per-pass summary line with counts — `scan.product.summary product=… discovered=%d downloaded=%d failed=%d` and a final `scan.summary` aggregating across products.
+
+Rule of thumb: a future you grepping logs at 11pm should be able to type `grep "version=X.Y.Z.W"` and see every event across every layer that touched that patch, in order, without having to correlate timestamps.
+
+---
+
 ## Mockup → Frontend (historical)
 
 The original mockup gaps (hardcoded data, fake timestamps, non-recomputing description, placeholder buttons) were all addressed during F2–F4. The live frontend reads from the API, uses real per-pipeline timestamps, recomputes the Jira description via `useEffect`, and wires real handlers. See [COMPLETED_PLAN_FRONTEND.md](COMPLETED_PLAN_FRONTEND.md) for the original plan and the F4 design notes below for what was actually built.
