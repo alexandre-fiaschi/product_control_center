@@ -14,6 +14,28 @@ from app.state.models import (
 )
 
 
+def pytest_addoption(parser):
+    parser.addoption(
+        "--pdf",
+        action="store",
+        default=None,
+        help="Path to a PDF file for the reference PDF-extraction tests",
+    )
+    parser.addoption(
+        "--pdf-output",
+        action="store",
+        default=None,
+        help="Persistent output dir for the PDF benchmark (default: tmp dir)",
+    )
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "reference: reference-only tests, skipped by default (run with -m reference)",
+    )
+
+
 @pytest.fixture
 def tmp_state_dir(tmp_path):
     state_dir = tmp_path / "state" / "patches"
