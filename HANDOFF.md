@@ -18,6 +18,25 @@ Field IDs, values, and templates are all in `config/pipeline.json`. Workflows an
 
 ---
 
+## Zendesk Scraper Gotchas
+
+The release-notes scraper for `cyberjetsupport.zendesk.com` lives at `scripts/test_zendesk_scraper.py`. It downloads PDF release notes for ACARS 7.3 / 8.0 / 8.1 from the help center. Validated end-to-end on 2026-04-10. Non-obvious traps:
+
+- **Cloudflare blocks `requests`** — the help center is behind a Cloudflare JS challenge ("Just a moment...") that returns 403 to plain `requests.Session`. Use `curl_cffi` with `impersonate="chrome"` — it presents a real Chrome TLS fingerprint and gets through. Pure Python, no browser. `pip install curl_cffi`.
+- **Don't override the User-Agent on a curl_cffi session** — `impersonate=` sets UA + TLS fingerprint together. Setting a custom UA desyncs them and Cloudflare blocks again.
+- **`curl_cffi` Response is not a context manager** — `with session.get(..., stream=True) as r:` raises TypeError. Call `r.close()` in a `finally` block instead. `iter_content(chunk_size=...)` works the same as `requests`.
+- **New Next.js auth SPA at `/auth/v3/signin`** — `/hc/en-gb/signin` redirects there. The form has no `action` attribute and login submission happens via bundled JS. **Workaround:** scrape the `authenticity_token` hidden input from the SPA HTML, then POST directly to the legacy `/access/login` endpoint with the classic form payload (`utf8`, `authenticity_token`, `user[email]`, `user[password]`, `return_to`, `commit`). The legacy backend still accepts it — much simpler than reverse-engineering the SPA bundle.
+- **Required POST headers** — `Referer: .../auth/v3/signin`, `Origin: https://<sub>.zendesk.com`, `Content-Type: application/x-www-form-urlencoded`. Missing the Referer can cause silent rejection.
+- **Auth success marker** — Zendesk sets a `_zendesk_authenticated` cookie after successful login. Cheap, reliable check beyond just URL inspection.
+- **PDF attachments live at `/hc/en-gb/article_attachments/<id>`** — the visible link text on the article page is the actual filename (e.g. `8.1.12.0 - Release Notes.pdf`); use it as the saved filename, not the URL basename (which is just the numeric ID).
+- **Output target is gitignored** — PDFs land in `docs_example/<branch>/zendesk_pdf_download/<article>/`. The whole `docs_example/` tree is in `.gitignore` so binaries never enter git.
+- **Polite throttling matters** — random 0.5–1.5s sleep between every request. We're scraping our vendor's portal, behave like a human.
+- **Version cutoff** — current iteration only fetches 8.1 articles ≥ `8.1.10` (default). 7.3 / 8.0 cutoffs are unset until product team confirms.
+
+Run `python scripts/test_zendesk_scraper.py --check-auth --verbose` to verify auth without crawling. See the script docstring for full CLI usage.
+
+---
+
 ## Known Issues — To Fix During Frontend Build
 
 1. **Mockup uses hardcoded data** — Real state is 31 pending binaries, 0 published. Mockup is design reference only — frontend fetches from API.
