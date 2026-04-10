@@ -568,13 +568,23 @@ Unit 4 (Block B prototype) is the only one that runs **in parallel** with the re
 **Effort:** Medium–Large.
 **Depends on:** units 7 + 8.
 
-**Scope.** New component for the PDF + DOCX side-by-side approval view. Triggered when "Approve Docs" is clicked on a `pending_approval` release-notes cell. PDF on the left (pdf.js or `<embed>`), DOCX on the right (v1: "download to review" link; HTML rendering is a v2 nice-to-have). Approve button on this view advances workflow status `pending_approval → approved`.
+**Scope.** New component for the PDF + DOCX side-by-side review view. Triggered when "Approve Docs" is clicked on a `pending_approval` release-notes cell. This view is a **gate in front of** the existing `JiraApprovalModal`, not a replacement for it.
+
+Flow:
+1. Click "Approve Docs" → `DocsReviewView` opens.
+2. PDF on the left (pdf.js or `<embed>`, served by unit 7's endpoint).
+3. DOCX on the right: since the backend runs on Alex's own machine, the DOCX already exists at a local path. Show the **local file path as copyable text** plus a "Reveal in Finder" affordance (`file://` link or a small backend endpoint that shells `open -R <path>` on macOS). **No download button** — he opens the file directly in Word to tweak it if needed. The unit 7 `draft.docx` endpoint stays available for future remote-backend scenarios and a v2 HTML preview, but is not the primary interaction in v1.
+4. "Looks good, continue" button → closes the review view and opens the existing `JiraApprovalModal`, pre-filled for the docs ticket. No new Jira UI — reuse what binaries already uses.
+5. Jira modal approve → normal approve endpoint → Unit 10's `approved → pdf_exported → published` flow kicks in on the backend.
+
+The review view itself does **not** advance workflow status — `pending_approval → approved` still happens through the Jira modal + approve endpoint, same pattern as binaries.
 
 **Files:**
-- `frontend/src/components/patches/DocsReviewView.tsx` (new) — the side-by-side component. Takes a patch, calls the file-serving endpoints from unit 7.
-- [frontend/src/views/Pipeline.tsx](frontend/src/views/Pipeline.tsx) — wire the existing "Approve Docs" path to open `DocsReviewView` instead of (or in addition to) the existing `JiraApprovalModal`.
+- `frontend/src/components/patches/DocsReviewView.tsx` (new) — side-by-side component. Takes a patch, uses unit 7's PDF endpoint for the left pane, shows `release_notes.generated_docx_path` on the right with a reveal-in-finder action. Emits a "continue" callback; the parent (Pipeline.tsx) then opens `JiraApprovalModal`.
+- [frontend/src/views/Pipeline.tsx](frontend/src/views/Pipeline.tsx) — chain the existing "Approve Docs" path: open `DocsReviewView` first, then on continue open the existing `JiraApprovalModal`. Binaries "Approve" path is untouched.
+- *(optional, if `file://` links prove unreliable in the browser)* `backend/app/api/patches.py` — add `POST /patches/{id}/release-notes/reveal` that runs `subprocess.run(["open", "-R", path])`. macOS-only, dev convenience, fine to skip if a plain `file://` link works.
 
-**Tests.** `npm run build` clean. Manual smoke test: open the review view on a real `pending_approval` patch, see the PDF render, download the DOCX, click approve, confirm state advances.
+**Tests.** `npm run build` clean. Manual smoke test: open the review view on a real `pending_approval` patch, see the PDF render, click the path to reveal the DOCX in Finder, open/edit in Word, click continue, see the Jira modal appear pre-filled, approve, confirm state advances through `approved → pdf_exported → published`.
 
 **Done criteria:** end-to-end docs review workflow works against real Zendesk-fetched release notes.
 
