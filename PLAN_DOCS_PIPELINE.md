@@ -79,39 +79,13 @@ The work splits cleanly into three blocks. They depend on each other in order, b
 
 **Goal:** make the docs track behave like the binaries track in the orchestrator, the API, and the UI — while keeping their approvals fully independent.
 
-**Orchestrator changes** ([orchestrator.py](backend/app/services/orchestrator.py)):
-- A main scan runs three sequential passes (see section 4.0): SFTP discovery → binaries pass → docs pass.
-- The docs pass during a main scan is **strictly first-look only**: it acts on cells where `release_notes.status == not_started` AND `last_run.state != "running"`. It does **not** auto-retry `not_found` cells — those are handled by the manual / targeted refetch endpoint (see section 4.2 for the asymmetry).
-- For each per-cell attempt: set `last_run.state = running` + `started_at` at the top, then on success set `state = success` + `finished_at`, on exception set `state = failed` + `finished_at` + `step` + `error`. Workflow status only advances on success.
-- Logs cleanly separate the two tracks per patch, using the `subsystem.action.outcome key=value` convention.
+> **Block C is a category, not a unit of work.** It covers orchestrator, API, UI, and approval semantics. Each of those is broken down into a separate PR-sized unit in [§7](#7-build-plan--prs). This sub-section keeps the design intent only; for *what gets built and in what order*, see §7 — that's the source of truth.
 
-**API:**
-- Existing `approve` endpoint already supports two-step save and works on a patch. Extend it so the request body can target `binaries` *or* `release_notes` — same contract, different sub-object. This stays one endpoint.
-- **Two kinds of scan, two endpoints:**
-  - `POST /scan` — **main scan** (SFTP discovery + fan-out to binaries download + docs fetch). Cron/manual trigger. Rejects if another main scan is running.
-  - `POST /patches/{id}/release-notes/refetch` — **targeted docs fetch** for one known patch. Does not touch SFTP. Allowed even while a main scan is running, because `last_run.state == "running"` on that specific cell is the lock.
-  - `POST /scan/release-notes?version=8.1` — **bulk docs fetch** (loop over N patches). Same locking as targeted.
-- New endpoint to serve the source PDF and generated DOCX for the side-by-side UI: `GET /patches/{id}/release-notes/source.pdf` and `.../draft.docx`.
-
-**UI — additive changes to the existing [Pipeline.tsx](frontend/src/views/Pipeline.tsx):**
-
-The current table is already structured right: one row per patch, two status-badge columns (binaries / release notes), two approval buttons. **Workflow status badges stay exactly as they are.** Changes are all additive:
-
-- Add a `not_found` entry to `STATUS_CONFIG` in [frontend/src/lib/constants.ts](frontend/src/lib/constants.ts) so the badge renders with a proper style.
-- Add a small **run indicator** next to each workflow badge, driven by `last_run.state`:
-  - `idle` or `success` → nothing (don't add visual noise for the happy path)
-  - `running` → spinner icon
-  - `failed` → red dot, hover reveals a tooltip with `step`, `error`, and `finished_at`; click offers "Retry"
-- On rows where `release_notes.status ∈ {not_started, not_found}`, add a "Refetch" action in the existing action area (next to "Approve Docs").
-- Extend [PatchDetailModal.tsx](frontend/src/components/patches/PatchDetailModal.tsx) to show the `last_run` details (both tracks) in addition to the existing workflow info.
-- When `release_notes.status == pending_approval`, the existing "Approve Docs" path opens a new **side-by-side review view**: source PDF on the left (pdf.js or `<embed>`), generated DOCX on the right. DOCX preview is harder than PDF — for v1, "download to review" is acceptable; HTML render is a v2 nice-to-have.
-- Version-header bulk action: "Refetch all missing release notes in V8.1" — calls the bulk docs endpoint.
-
-**Explicitly unchanged:** filter bar, history table, workflow-status badge styles (other than adding `not_found`), approval modal, overall page layout.
-
-**Approval semantics — the only place the two tracks touch:**
-- Approving binaries and approving docs are still independent buttons / endpoints / Jira tickets.
-- The docs approval has one extra final step the binaries approval doesn't: after approval, generate a final PDF from the approved DOCX and attach *that* to the docs Jira ticket. State: `approved → pdf_exported → published`.
+**Design intent (the parts that aren't mechanical):**
+- The existing `approve` endpoint stays one endpoint. Same contract, request body targets `binaries` *or* `release_notes`.
+- A main scan is the three-pass flow from §4.0. The docs pass auto-acts on `not_started` only — never `not_found` (see §4.2 for the asymmetry).
+- The existing [Pipeline.tsx](frontend/src/views/Pipeline.tsx) table is already structured right: one row per patch, two status-badge columns, two approval buttons. **All UI changes are additive** — workflow status badges stay exactly as they are. Filter bar, history table, approval modal, overall layout: unchanged.
+- Approving binaries and approving docs are still independent buttons / endpoints / Jira tickets. The docs side has one extra final step: after approval, convert the approved DOCX to PDF and attach *that* to the docs Jira ticket. State: `approved → pdf_exported → published`.
 
 ---
 
@@ -389,13 +363,249 @@ These are decisions, not unknowns. Each one needs a yes/no before the relevant b
 
 ---
 
-## 7. Suggested build order
+## 7. Build plan — PRs
 
-1. **State model foundation** — add `LastRun` Pydantic model; add `last_run: LastRun` field to both `BinariesState` and `ReleaseNotesState`; add `not_found` to `ReleaseNotesState.status` Literal; add `ScanRecord` model + `state/scans/` storage. Tiny PR, unblocks everything. (Workflow status keeps its current values; no `error` or `failed` values on workflow status — see section 3.)
-2. **Orchestrator refactor** — wrap every per-cell attempt (binaries download, docs fetch, converter) in the 5-step lifecycle from section 3.4 (pre-flight lock check → start → execute → success/failure). Existing binaries code gets retrofitted first, then docs blocks build on top of the same helper.
-3. **Block A** — extract Zendesk scraper into `backend/app/integrations/zendesk.py`, build `backend/app/pipelines/docs/fetcher.py`, wire into orchestrator behind a feature flag. Tests with fixtures, no live calls in CI.
-4. **Block B prototype, standalone** — 3 real PDFs → 3 DOCX outputs. Eyeball the results with Alex. Decide go/no-go on fidelity before continuing.
-5. **Block B integrated** — `converter.py` replaces the stub, plugged into the orchestrator after fetcher.
-6. **Block C — API** — extend approve endpoint, add `POST /scan` (main, with 409 conflict check), `POST /patches/{id}/release-notes/refetch` (targeted), `POST /scan/release-notes` (bulk), add file-serving endpoints for PDF + DOCX.
-7. **Block C — UI** — add `not_found` badge style; add run indicator (spinner / red dot with tooltip) next to each workflow badge; add "Refetch" row action; extend detail modal with `last_run` details; build side-by-side PDF+DOCX review view.
-8. **Final step** — DOCX → PDF export on approval, attached to Jira docs ticket.
+The work is split into **11 PR-sized units**. Every unit produces **one PR**, **one git commit**, and **passing tests** (`cd backend && pytest tests/ -v -k "not integration"` for backend; `cd frontend && npm run build` for frontend). Each unit is small enough to brief a single agent on without ambiguity.
+
+**Conventions for every unit:**
+- Each unit has a clearly stated **scope**, list of **files**, **tests**, **dependencies**, and **done criteria**.
+- An agent picks up one unit at a time, opens a branch, implements it, runs the test command listed, and commits.
+- No unit modifies more than its listed files unless a dependency was missed (in which case: stop and update this plan first).
+- Logs in every backend unit follow the convention defined in unit 0.
+
+**Dependency graph:**
+
+```
+0 ──► 1 ──► 2 ──► 3 ──► 5 ──► 6 ──► 7 ──► 8 ──► 9 ──► 10
+                  │     ▲
+                  └─────┘
+              4 (parallel — gate before 5)
+```
+
+Unit 4 (Block B prototype) is the only one that runs **in parallel** with the rest. It gates unit 5 (don't integrate the converter until the prototype proves DOCX fidelity is acceptable).
+
+---
+
+### Unit 0 — Logging convention + binaries logging retrofit + IOError fix
+
+**Effort:** Small.
+**Depends on:** nothing.
+
+**Scope.** Establish the logging convention used by every later unit, retrofit existing binaries code to it as a worked example, and fix one swallowed-exception bug along the way. No new features.
+
+**Files:**
+- [HANDOFF.md](HANDOFF.md) — add a one-paragraph "Logging convention" section: events use `subsystem.action.outcome` naming, payload uses `key=value` greppable fields, exceptions use `exc_info=True`, document the standard fields (`product`, `version`, `step`).
+- [backend/app/services/orchestrator.py](backend/app/services/orchestrator.py) — convert existing log calls to the new convention. Add a per-patch summary line and a per-scan summary line (counts of new / downloaded / failed).
+- [backend/app/pipelines/binaries/fetcher.py](backend/app/pipelines/binaries/fetcher.py) — convert log calls; **fix the bug at line 32**: `IOError` is currently swallowed (returns 0, logs an error, but the caller treats it as success). Re-raise instead so the caller's `try/except` actually sees the failure.
+
+**Tests.** Add a unit test that simulates `_download_recursive` raising `IOError` and asserts the orchestrator catches it (today's behavior is the bug — the orchestrator never sees it). Run full backend suite.
+
+**Done criteria:** all 121 existing tests + new test pass; binaries logs in the new format; HANDOFF.md has the convention paragraph.
+
+---
+
+### Unit 1 — State model foundation
+
+**Effort:** Small.
+**Depends on:** unit 0.
+
+**Scope.** Add `LastRun` Pydantic model; add `last_run` field to both `BinariesState` and `ReleaseNotesState`; add `not_found` value to `ReleaseNotesState.status` Literal. **No `ScanRecord` yet — that lives in unit 6 where it has somewhere to be exercised.** Migration is **lazy default on load** (Pydantic default value handles existing JSON files automatically).
+
+**Files:**
+- [backend/app/state/models.py](backend/app/state/models.py) — add `LastRun`, add `last_run: LastRun = LastRun()` to both states, extend the release notes Literal.
+
+**Tests.**
+- Round-trip: load each existing fixture under [state/patches/](state/patches/), confirm it parses with default `last_run` populated, write it back, confirm bytewise (or semantic) round-trip.
+- New `not_found` value parses cleanly.
+- Default `LastRun()` has `state == "idle"` and all timestamp fields `None`.
+
+**Done criteria:** all existing tests + new model tests pass; existing state JSON files load without modification.
+
+---
+
+### Unit 2 — Lifecycle helper + binaries retrofit
+
+**Effort:** Medium.
+**Depends on:** unit 1.
+
+**Scope.** Implement the per-cell 5-step lifecycle from §3.4 as a single helper. Retrofit the existing binaries download to use it. Binaries gain `last_run` tracking automatically — **no new endpoints, no UI changes**. This is the foundation every later pipeline (docs fetch, converter) reuses.
+
+**Files:**
+- `backend/app/services/lifecycle.py` (new) — `run_cell(cell, work_fn, *, step_name)` helper. Pre-flight lock check → set `running` + `started_at` → call `work_fn` → on return set `success` + `finished_at`, on exception set `failed` + `finished_at` + `step` + `error` (one-line summary). Returns success/failure indicator.
+- [backend/app/services/orchestrator.py](backend/app/services/orchestrator.py) — wrap the existing binaries download call in `run_cell`. Workflow status transitions stay where they are; the helper only manages `last_run`.
+
+**Tests.**
+- Successful run → `last_run.state == "success"`, `started_at` and `finished_at` set, no `step`/`error`.
+- Failing run (work_fn raises) → `state == "failed"`, `step` and `error` populated.
+- Lock case: call `run_cell` on a cell whose `last_run.state` is already `"running"` → returns immediately, doesn't run `work_fn`.
+
+**Done criteria:** existing binaries download tests still pass; new lifecycle tests pass; binaries run records are visible in the JSON state file after a scan.
+
+---
+
+### Unit 3 — Block A: Zendesk fetcher
+
+**Effort:** Medium.
+**Depends on:** unit 2.
+
+**Scope.** Extract the standalone Zendesk scraper from [scripts/test_zendesk_scraper.py](scripts/test_zendesk_scraper.py) into `backend/app/integrations/zendesk.py`. Build `backend/app/pipelines/docs/fetcher.py` that takes a patch and uses the integration to look up the matching release-notes article. Wire into the orchestrator as the docs pass (third pass — see §4.0). **Auto-acts on `not_started` only**, never `not_found`. All Zendesk calls go through `run_cell` from unit 2.
+
+**Files:**
+- `backend/app/integrations/zendesk.py` (new) — `ZendeskClient` class: login, find article by version, download PDF. No business logic, just integration.
+- `backend/app/pipelines/docs/fetcher.py` (new) — `fetch_release_notes(patch)`: calls the client, on success downloads PDF + transitions workflow status `not_started → discovered → downloaded`, on clean-negative transitions to `not_found`, on exception lets the lifecycle helper record the failure.
+- [backend/app/services/orchestrator.py](backend/app/services/orchestrator.py) — add the docs pass after the binaries pass. Behind a config flag (`pipeline.docs.enabled`) so it can be turned off if Zendesk is unstable.
+- [backend/app/pipelines/docs/stub.py](backend/app/pipelines/docs/stub.py) — delete (replaced by `fetcher.py`).
+
+**Tests.**
+- Fixture-based tests with recorded HTTP responses (no live calls in CI). Cover: login success, article found + PDF downloaded, article not found (clean negative → `not_found`), Cloudflare 403 (exception → `last_run.state == failed`), ambiguous match (multiple candidates → `not_found` + warning log event).
+- Orchestrator integration test: run a full main scan against fixture state, confirm binaries pass and docs pass both run, both update their respective `last_run`.
+
+**Done criteria:** main scan finds and downloads at least one real release-note PDF in dev (manual smoke test); fixture tests cover all five failure modes; existing tests still pass.
+
+---
+
+### Unit 4 — Block B prototype (standalone, parallel) — GATE BEFORE UNIT 5
+
+**Effort:** Small–Medium.
+**Depends on:** nothing — runs in parallel with units 0–3.
+
+**Scope.** Standalone PDF → CAE-templated DOCX prototype. **Not wired into the pipeline.** Goal is to answer: *is the conversion fidelity good enough to ship?* If yes, unit 5 wires it in. If no, the docs pipeline becomes a "human edits the DOCX in Word" loop and the rest of the plan changes shape.
+
+**Files:**
+- `scripts/test_docx_conversion.py` (new) — takes a PDF path + template path, produces a DOCX. Same standalone-script style as `test_zendesk_scraper.py`.
+
+**Tests.** Manual eyeball with Alex on **3 representative real PDFs** (one per product family if possible — V7.3, V8.0, V8.1). Document the verdict in the PR description: structure preserved? styles applied? sections in the right order? what's broken? what's acceptable?
+
+**Done criteria:** 3 sample DOCX outputs reviewed with Alex; explicit go/no-go decision recorded in the PR. If no-go, the plan §2 Block B and units 5/9/10 need to be redesigned before continuing.
+
+---
+
+### Unit 5 — Block B integrated
+
+**Effort:** Medium.
+**Depends on:** units 3 + 4 (and 4 was a "go").
+
+**Scope.** Move the prototype from unit 4 into `backend/app/pipelines/docs/converter.py`. Plug into the orchestrator after the docs fetcher, so the workflow status flows `downloaded → converted` automatically. Re-conversion is idempotent: re-running on a `converted` or `pending_approval` cell overwrites the DOCX without re-downloading the source PDF.
+
+**Files:**
+- `backend/app/pipelines/docs/converter.py` (new) — `convert_to_docx(source_pdf_path, template_path, output_path)`. Wraps the prototype logic in the lifecycle helper (`step_name="convert"`).
+- [backend/app/services/orchestrator.py](backend/app/services/orchestrator.py) — call the converter after fetcher succeeds.
+- `backend/app/state/models.py` — add `source_pdf_path` and `generated_docx_path` fields on `ReleaseNotesState` (mentioned in §2 Block A/B but not yet on the model).
+
+**Tests.**
+- Unit: converter produces a DOCX file from a fixture PDF.
+- Integration: full orchestrator pass takes a patch from `not_started` → `discovered` → `downloaded` → `converted` against fixtures.
+- Re-conversion: running the converter twice on the same patch overwrites the DOCX.
+
+**Done criteria:** at least one real patch end-to-end in dev produces a `pending_approval` release_notes cell with both files on disk.
+
+---
+
+### Unit 6 — Scan endpoints + scan history persistence
+
+**Effort:** Medium.
+**Depends on:** unit 5.
+
+**Scope.** Three new API endpoints + scan history storage. **No UI yet** — endpoints are usable from curl / OpenAPI docs.
+
+**Files:**
+- `backend/app/api/pipeline.py` (existing or new) — `POST /scan` (main scan, returns 409 if another main scan is running per the `finished_at IS NULL` check from §4.3), `POST /patches/{id}/release-notes/refetch` (targeted, allowed during a main scan because per-cell lock handles it), `POST /scan/release-notes?version=...` (bulk, calls targeted in a loop).
+- `backend/app/state/scan_history.py` (new) — `ScanRecord` Pydantic model + `save_scan_record()` / `is_main_scan_running()` / `list_recent_scans()` helpers. Storage: **`state/scans/<scan_id>.json`** (decided in §5 question 6 — many small files, rotation-friendly, no need to load history into memory for the running-check).
+- `backend/app/state/models.py` — add `ScanRecord` model.
+
+**Tests.**
+- POST /scan starts a main scan, writes a ScanRecord with `finished_at: null`, second POST /scan immediately returns 409.
+- POST /patches/{id}/release-notes/refetch is allowed during a main scan; if the cell is already `running`, returns a clear "already in progress" response.
+- Bulk endpoint loops correctly and reports per-cell outcomes.
+- `is_main_scan_running()` returns `True` while a scan record has no `finished_at` and `False` after.
+
+**Done criteria:** all three endpoints visible in `/docs` Swagger, exercised with curl in dev, scan records appear in `state/scans/`.
+
+---
+
+### Unit 7 — File serving endpoints
+
+**Effort:** Small.
+**Depends on:** unit 5.
+
+**Scope.** Serve the source PDF and generated DOCX for a given patch's release notes. Needed by unit 9's review view. Tiny but isolated so it can ship independently.
+
+**Files:**
+- `backend/app/api/patches.py` (existing) — `GET /patches/{id}/release-notes/source.pdf` and `GET /patches/{id}/release-notes/draft.docx`. Both return the file with correct `Content-Type`. 404 if the file doesn't exist on disk.
+
+**Tests.**
+- Both endpoints return file content for a fixture patch with both files.
+- 404 when files are missing.
+- Correct Content-Type headers.
+
+**Done criteria:** `curl -O` against both endpoints downloads usable files in dev.
+
+---
+
+### Unit 8 — UI: additive changes (badge, run indicator, refetch action, detail modal)
+
+**Effort:** Medium.
+**Depends on:** unit 6.
+
+**Scope.** All the additive changes to the existing [Pipeline.tsx](frontend/src/views/Pipeline.tsx) and [PatchDetailModal.tsx](frontend/src/components/patches/PatchDetailModal.tsx) **except** the side-by-side review view (that's unit 9). Workflow status badges stay where they are. No layout changes.
+
+**Files:**
+- [frontend/src/lib/constants.ts](frontend/src/lib/constants.ts) — add `not_found` entry to `STATUS_CONFIG` with appropriate badge style.
+- [frontend/src/lib/types.ts](frontend/src/lib/types.ts) — add `LastRun` type and extend `BinariesState` / `ReleaseNotesState` types to include `last_run`.
+- [frontend/src/components/shared/StatusBadge.tsx](frontend/src/components/shared/StatusBadge.tsx) — accept an optional `lastRun` prop, render a small spinner icon when `last_run.state == "running"`, render a small red dot when `last_run.state == "failed"`. Hover on red dot reveals a tooltip with `step`, `error`, `finished_at`. Click on red dot offers "Retry" (calls the targeted refetch endpoint).
+- [frontend/src/views/Pipeline.tsx](frontend/src/views/Pipeline.tsx) — pass `last_run` to both `StatusBadge` instances; add a "Refetch Release Notes" action button in the actions area for rows where `release_notes.status ∈ {not_started, not_found}`.
+- [frontend/src/components/patches/PatchDetailModal.tsx](frontend/src/components/patches/PatchDetailModal.tsx) — add a "Last run" section per track showing `state`, `started_at`, `finished_at`, `step`, `error` when populated.
+- [frontend/src/lib/api.ts](frontend/src/lib/api.ts) — add API client functions for `refetchReleaseNotes(patchId)` and the bulk endpoint.
+
+**Tests.** `cd frontend && npm run build` clean. Manual smoke test in dev: a `not_found` patch shows the badge and a working refetch button; a `failed` `last_run` shows the red dot with hover.
+
+**Done criteria:** UI renders all `last_run` states correctly against real backend data; refetch button triggers a real Zendesk lookup end-to-end.
+
+---
+
+### Unit 9 — UI: side-by-side review view
+
+**Effort:** Medium–Large.
+**Depends on:** units 7 + 8.
+
+**Scope.** New component for the PDF + DOCX side-by-side approval view. Triggered when "Approve Docs" is clicked on a `pending_approval` release-notes cell. PDF on the left (pdf.js or `<embed>`), DOCX on the right (v1: "download to review" link; HTML rendering is a v2 nice-to-have). Approve button on this view advances workflow status `pending_approval → approved`.
+
+**Files:**
+- `frontend/src/components/patches/DocsReviewView.tsx` (new) — the side-by-side component. Takes a patch, calls the file-serving endpoints from unit 7.
+- [frontend/src/views/Pipeline.tsx](frontend/src/views/Pipeline.tsx) — wire the existing "Approve Docs" path to open `DocsReviewView` instead of (or in addition to) the existing `JiraApprovalModal`.
+
+**Tests.** `npm run build` clean. Manual smoke test: open the review view on a real `pending_approval` patch, see the PDF render, download the DOCX, click approve, confirm state advances.
+
+**Done criteria:** end-to-end docs review workflow works against real Zendesk-fetched release notes.
+
+---
+
+### Unit 10 — DOCX → PDF on approval, attached to Jira docs ticket
+
+**Effort:** Small–Medium.
+**Depends on:** unit 9.
+
+**Scope.** Final transition. After a docs cell is approved, convert the approved DOCX to PDF and attach the PDF (not the DOCX) to the docs Jira ticket. State: `approved → pdf_exported → published`. This is the only step where the docs flow differs from binaries.
+
+**Files:**
+- `backend/app/pipelines/docs/exporter.py` (new) — `export_docx_to_pdf(docx_path) → pdf_path`. Wrap in lifecycle helper (`step_name="pdf_export"`).
+- [backend/app/services/patch_service.py](backend/app/services/patch_service.py) — extend the docs approve flow: after approval, call exporter, advance status to `pdf_exported`, then create Jira ticket and attach the PDF, then advance to `published`.
+- Tests against fixtures.
+
+**Tests.**
+- Unit: exporter produces a valid PDF from a fixture DOCX.
+- Integration: full docs approve flow takes a `pending_approval` cell to `published` with a real Jira ticket key and PDF attachment (against a Jira fixture / mock).
+- Two-step save: if Jira fails after `pdf_exported`, the cell remains at `pdf_exported` on disk and can be retried.
+
+**Done criteria:** at least one real docs ticket created in dev with a converted PDF attachment.
+
+---
+
+### Block-to-unit mapping (for cross-reference)
+
+| Block in §2 | Units in §7 |
+|---|---|
+| Block A — Zendesk fetcher | Unit 3 |
+| Block B — DOCX template injection | Units 4 (prototype) + 5 (integrated) |
+| Block C — Merge into approval flow | Units 6 (API) + 7 (file serving) + 8 (UI additive) + 9 (review view) + 10 (DOCX→PDF) |
+| Foundational (not in §2) | Units 0 (logging) + 1 (state model) + 2 (lifecycle helper) |
