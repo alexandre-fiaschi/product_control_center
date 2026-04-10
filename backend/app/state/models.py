@@ -4,6 +4,18 @@ from typing import Literal
 from pydantic import BaseModel
 
 
+# Workflow status (the Literal on BinariesState/ReleaseNotesState) describes where a
+# track is in the business process. Execution outcomes — including failures — live on
+# LastRun, never on workflow status. Do not add "failed" or "error" values to either
+# status Literal. See PLAN_DOCS_PIPELINE.md §3.
+class LastRun(BaseModel):
+    state: Literal["idle", "running", "success", "failed"] = "idle"
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    step: str | None = None
+    error: str | None = None
+
+
 class BinariesState(BaseModel):
     status: Literal["discovered", "downloaded", "pending_approval", "approved", "published"] = "discovered"
     discovered_at: datetime | None = None
@@ -12,10 +24,11 @@ class BinariesState(BaseModel):
     published_at: datetime | None = None
     jira_ticket_key: str | None = None
     jira_ticket_url: str | None = None
+    last_run: LastRun = LastRun()
 
 
 class ReleaseNotesState(BaseModel):
-    status: Literal["not_started", "discovered", "downloaded", "converted", "pending_approval", "approved", "pdf_exported", "published"] = "not_started"
+    status: Literal["not_started", "discovered", "downloaded", "converted", "pending_approval", "approved", "pdf_exported", "published", "not_found"] = "not_started"
     discovered_at: datetime | None = None
     downloaded_at: datetime | None = None
     converted_at: datetime | None = None
@@ -24,6 +37,7 @@ class ReleaseNotesState(BaseModel):
     pdf_exported_at: datetime | None = None
     jira_ticket_key: str | None = None
     jira_ticket_url: str | None = None
+    last_run: LastRun = LastRun()
 
 
 class PatchEntry(BaseModel):
