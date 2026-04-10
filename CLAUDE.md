@@ -4,7 +4,7 @@
 
 Automate the ingestion of software releases from an SFTP server for the OpsComm / ACARS product family. The pipeline scans for new patches, downloads them, and presents them for manual approval before publishing to the CAE community portal. This is the first module of a larger Product Control Center platform.
 
-**Current phase:** MVP (Phase 0) — SFTP discovery + download + manual approval via API/UI.
+**Current phase:** MVP (Phase 0) **complete** — backend done (5 blocks, 121 tests), frontend done (F1–F5; F6 testing deferred). Next phase is the **docs pipeline** (Zendesk fetch + DOCX template injection) — design captured in [PLAN_DOCS_PIPELINE.md](PLAN_DOCS_PIPELINE.md).
 
 ## Tech Stack
 
@@ -48,7 +48,7 @@ OpsCommDocsPipeline/
 │   │   ├── state/
 │   │   │   ├── models.py          # Pydantic models (ProductTracker, PatchEntry, etc.)
 │   │   │   └── manager.py         # load_tracker(), save_tracker() — atomic writes
-│   │   ├── api/                   # (Block 5)
+│   │   ├── api/                   # FastAPI routers (10 endpoints)
 │   │   ├── services/
 │   │   │   ├── orchestrator.py    # run_scan() — SFTP → discover → download → update state
 │   │   │   └── patch_service.py   # find_patch(), approve_binaries() with two-step save
@@ -57,9 +57,9 @@ OpsCommDocsPipeline/
 │   │   │   ├── binaries/
 │   │   │   │   └── fetcher.py     # download_patch() — recursive SFTP download
 │   │   │   └── docs/
-│   │   │       └── stub.py        # Placeholder — returns "skipped"
-│   │   └── integrations/          # (Blocks 2 + 3)
-│   ├── tests/                     # pytest — 99 tests passing
+│   │   │       └── stub.py        # Placeholder — to be replaced by Zendesk fetcher + DOCX converter (see PLAN_DOCS_PIPELINE.md)
+│   │   └── integrations/          # sftp/, jira/, (zendesk/ — coming next)
+│   ├── tests/                     # pytest — 121 tests passing
 │   └── requirements.txt
 ├── config/pipeline.json           # Products, lifecycle, Jira fields, portal settings
 ├── state/patches/*.json           # Tracker files — source of truth for state model
@@ -74,18 +74,20 @@ OpsCommDocsPipeline/
 
 | Document | What it covers |
 |----------|---------------|
-| `HANDOFF.md` | **Start here for building.** Jira gotchas, known issues, and 5 backend build blocks with tests/logging per block |
-| `ARCHITECTURE.md` | Workflows, API endpoints (10 total), state model, approve flow (two-step save), error handling |
-| `PLAN_RESTRUCTURE.md` | Target folder structure for `backend/` + `frontend/`, code extraction map from scripts |
-| `PLAN_FRONTEND.md` | Frontend components, views, API client, data flow, mockup line references |
+| `PLAN_DOCS_PIPELINE.md` | **Start here for the next phase.** Docs pipeline design: Zendesk fetch + DOCX template injection, two-state-machine model (workflow status + run status), main scan flow, retrigger model, scan history. |
+| `HANDOFF.md` | Jira gotchas, Zendesk scraper gotchas, completed backend blocks, completed frontend blocks |
+| `ARCHITECTURE.md` | Workflows, API endpoints (10 total), state model, approve flow (two-step save), error handling. **Note:** the docs-pipeline portions (Phase 1, scan-workflow `DOC/` detection) are superseded by `PLAN_DOCS_PIPELINE.md`. |
 | `FRONTEND_WORKFLOWS.md` | API response shapes, UI mockups, rendering rules |
 | `config/pipeline.json` | All Jira field IDs, values, templates — the actual config used at runtime |
 | `state/patches/*.json` | Canonical state model — use this structure, NOT the flat model in scripts |
+| `COMPLETED_PLAN_RESTRUCTURE.md` | Historical: original plan for the backend/frontend folder structure (done) |
+| `COMPLETED_PLAN_FRONTEND.md` | Historical: original plan for the frontend build blocks F1–F5 (done) |
+| `PLAN_FRONTEND_TESTING.md` | Deferred: full frontend test plan for when F6 is picked up |
 
 ## Agent Instructions
 
-- **Parallelize when possible.** Backend blocks 2 (SFTP) and 3 (Jira) can be built in parallel — they both depend on block 1 but not on each other. If you can run multiple agents, do it.
-- **Each block = code + tests + logging + commit.** Don't skip tests or logging — they're specified per block in `HANDOFF.md`.
+- **Each block = code + tests + logging + commit.** Don't skip tests or logging.
 - **Test before commit:** `cd backend && pytest tests/ -v -k "not integration"` must pass before every push.
-- **State model:** Always use the nested structure from `state/patches/*.json` (binaries + release_notes sub-objects). The scripts use an outdated flat model — don't copy it.
+- **State model:** Always use the nested structure from `state/patches/*.json` (binaries + release_notes sub-objects). The scripts use an outdated flat model — don't copy it. The docs pipeline adds two new things to this model — see [PLAN_DOCS_PIPELINE.md](PLAN_DOCS_PIPELINE.md) section 3: a `not_found` value on `release_notes.status`, and a `last_run` sub-object on **both** tracks (workflow status and run status are two orthogonal state machines — never put `failed` or `error` in workflow status).
 - **Approve endpoint logic:** Empty request body = mark as published (skip Jira). Body with Jira fields = full flow. Same endpoint, no separate routes.
+- **Docs pipeline source:** release notes come from **Zendesk**, not from a `DOC/` subfolder on SFTP. Older parts of `ARCHITECTURE.md` mention `DOC/` detection — that approach was dropped. See `PLAN_DOCS_PIPELINE.md`.

@@ -1,5 +1,7 @@
 # Plan: Restructure Project into Backend + Frontend
 
+> **Status: COMPLETED.** The backend/frontend folder structure described here is what the project ships today. Kept for historical reference — describes the original scaffolding plan, not the current state. For the current architecture see [ARCHITECTURE.md](ARCHITECTURE.md), and for the next phase see [PLAN_DOCS_PIPELINE.md](PLAN_DOCS_PIPELINE.md).
+
 ## Context
 
 The OpsComm Pipeline project currently has a flat structure with Python scripts in `scripts/`, a React mockup at root, and shared state/config. The goal is to create a proper `backend/` and `frontend/` folder structure that separates concerns, keeping shared data directories (`state/`, `config/`, `patches/`, `templates/`) at the project root.

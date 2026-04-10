@@ -1,5 +1,12 @@
 # OpsComm Pipeline — Architecture & Implementation Plan
 
+> **⚠️ Note (2026-04-10):** Sections describing the docs pipeline are partially superseded by [PLAN_DOCS_PIPELINE.md](PLAN_DOCS_PIPELINE.md). Specifically:
+> - Release notes come from **Zendesk**, not from a `DOC/` subfolder on SFTP. The "Scan Workflow" steps that check `DOC/` (lines around the Scan Workflow section) are obsolete.
+> - The state model is extended with a `not_found` value on `release_notes.status` and a `last_run` sub-object on **both** tracks. See `PLAN_DOCS_PIPELINE.md` section 3.
+> - Phase 1 below ("Docs Pipeline") is replaced by the plan in `PLAN_DOCS_PIPELINE.md`.
+>
+> Everything else in this doc (SFTP structure, Jira workflows, binaries pipeline, API endpoints, two-step save) is current.
+
 ## Context
 
 The OpsComm Pipeline is the **first module** of a larger Product Control Center — a modular platform where independent pipelines can be plugged in to automate operations workflows. The first pipeline handles SFTP ingestion of software releases (binaries + documentation) for the OpsComm / ACARS product family.
@@ -222,22 +229,26 @@ Patch IDs are normalized to dotted format regardless of SFTP folder naming.
 
 Each patch tracks **binaries** and **release notes** independently, with separate Jira tickets for each.
 
-**Binaries pipeline:**
+**Binaries pipeline (workflow status):**
 ```
 discovered → downloaded → pending_approval → approved → published
 ```
 
-**Release notes pipeline:**
+**Release notes pipeline (workflow status):**
 ```
 not_started → discovered → downloaded → converted → pending_approval → approved → pdf_exported → published
+                                                                                                  └─ not_found  (added in docs pipeline plan)
 ```
 
-- `downloaded`: raw release notes fetched from SFTP
+- `downloaded`: raw release notes fetched from Zendesk *(was: SFTP — see note at top of doc)*
 - `converted`: raw doc injected into CAE branded .docx template
 - `pending_approval`: branded .docx ready for manual review
 - `approved`: operator has reviewed and confirmed the .docx content
 - `pdf_exported`: .docx exported to PDF (attached to Jira ticket)
 - `published`: Jira ticket created + PDF attached, posted to community portal
+- `not_found`: Zendesk lookup ran cleanly, no matching article exists yet — recovery is via manual refetch button (see PLAN_DOCS_PIPELINE.md §4.2)
+
+**Run status (added in docs pipeline plan).** A separate `last_run` sub-object on both `BinariesState` and `ReleaseNotesState` tracks the latest attempt: `idle / running / success / failed` plus `started_at`, `finished_at`, `step`, `error`. Workflow status describes the patch's place in the business process; run status describes the latest attempt's outcome. **Workflow status never holds error values** — failures live in run status. Full design in PLAN_DOCS_PIPELINE.md §3.
 
 ---
 
@@ -307,6 +318,8 @@ not_started → discovered → downloaded → converted → pending_approval →
 3. Update last_scanned_at timestamp
 4. Save tracker JSON (atomic write)
 ```
+
+> **⚠️ Steps vi–vii (DOC/ subfolder detection) are obsolete.** The docs pipeline now sources release notes from Zendesk, not from a `DOC/` folder on SFTP. The new main-scan flow is **three sequential passes** (SFTP discovery → binaries pass → docs pass via Zendesk). See [PLAN_DOCS_PIPELINE.md §4.0](PLAN_DOCS_PIPELINE.md). Steps i–v (binaries discovery + download) remain accurate.
 
 **Key rules:**
 - Idempotent: re-scanning never duplicates existing patches
@@ -440,25 +453,28 @@ SFTP is the first integration. Future integrations (Jira, email, PM tools) follo
 
 ## Phased Roadmap
 
-### Phase 0 — MVP ← WE ARE HERE
+### Phase 0 — MVP ✅ COMPLETE
 **Goal:** SFTP → discover → download binaries → approve → publish tracking
 
 - ✅ JSON state files on disk (no database)
 - ✅ SFTP integration (paramiko connector + scanner)
 - ✅ Binaries pipeline (fetch + verify)
 - ✅ Manual approval workflow via API (10 endpoints, 121 tests)
-- 🔨 React + Vite dashboard — F2 (layout + dashboard) complete, F3–F6 remaining — see `PLAN_FRONTEND.md`
+- ✅ React + Vite dashboard — F1–F5 complete (F6 testing deferred — see [PLAN_FRONTEND_TESTING.md](PLAN_FRONTEND_TESTING.md))
 - ⬜ Docker Compose (backend + frontend, no DB)
-- ✅ Docs pipeline stubbed (no DOC/ on SFTP yet)
+- ✅ Docs pipeline stubbed
 
-### Phase 1 — Docs Pipeline
-**Goal:** Convert raw release notes to branded CAE documents
+### Phase 1 — Docs Pipeline ← WE ARE HERE
+**Goal:** Fetch release notes from Zendesk, inject into CAE branded DOCX template, approve, publish.
 
-- Docx template engine (python-docx): extract body content → inject into CAE template
-- DOC/ folder detection during SFTP scan
-- Independent docs approval workflow (separate from binaries)
-- Release notes file tracking in state files (source path + output path)
-- Template management (multiple templates possible)
+**Full design:** [PLAN_DOCS_PIPELINE.md](PLAN_DOCS_PIPELINE.md). Highlights:
+
+- **Source:** Zendesk help center (`cyberjetsupport.zendesk.com`), not SFTP `DOC/` folders. Scraper prototype validated 2026-04-10 — `scripts/test_zendesk_scraper.py` (curl_cffi + legacy `/access/login`).
+- **State model additions:** `not_found` value on `release_notes.status`; new `LastRun` sub-object on both `BinariesState` and `ReleaseNotesState` (workflow status + run status as two orthogonal state machines — section 3 of the plan).
+- **Main scan = three sequential passes:** SFTP discovery → binaries pass → docs pass. Docs pass auto-acts on `not_started` only — `not_found` recovery is via the manual UI button or a future email webhook (never blind cron polling).
+- **Two scan endpoints:** `POST /scan` (main scan, locks against itself), `POST /patches/{id}/release-notes/refetch` (targeted, allowed during a main scan because the per-cell `last_run.state == running` is the lock). Bulk refetch endpoint also planned.
+- **Scan history persisted** to `state/scans/` so the "is a scan running" signal and audit trail are durable.
+- **DOCX → PDF on approval**, attached to the docs Jira ticket as the final step.
 
 ### Phase 2 — PostgreSQL Migration
 **Goal:** Move from JSON files to a proper database for richer data and querying
@@ -478,26 +494,18 @@ SFTP is the first integration. Future integrations (Jira, email, PM tools) follo
 - Browser notifications for new patches / approval requests
 - Live dashboard updates
 
-### Phase 4 — Jira Automation (Partially Complete)
+### Phase 4 — Jira Automation ✅ COMPLETE (in MVP)
 **Goal:** Auto-create Jira tasks when patches are approved
 
-**Confirmed (2026-04-03):**
-- Jira Cloud connection working (classic API token + Basic Auth)
-- Project: `CFSSOCP` (CFS-ServiceOps-CommPortal, id=10008)
-- Issue type: "Release notes, documents & binaries" (id=10163)
-- All 10 required fields mapped with confirmed IDs and values
-- Dry-run script validated (`scripts/test_jira.py`)
-- **Real ticket created & validated** (CFSSOCP-6590) — all fields accepted, attachment uploaded
-- **Search API:** Old `/rest/api/3/search` removed (HTTP 410). Use `POST /rest/api/3/search/jql`
-- **New/existing detection:** JQL searches by Release Name field (`cf[10563]`), not summary
-- **Delete via API:** Not available (403) — must delete manually
-- Ticket creation script: `scripts/create_jira_ticket.py`
+Jira automation was folded into the MVP backend (Block 3 + Block 4) instead of waiting for a separate phase. Live behavior:
 
-**Remaining:**
-- Write ticket keys back to patch state trackers (`jira_ticket_key`, `jira_ticket_url`, `jira_created_at`)
-- Batch processing for multiple simultaneous approvals
-- Zip + attach real downloaded binaries to created tickets
-- Status polling and state sync
+- Jira Cloud connection working (classic API token + Basic Auth)
+- Project `CFSSOCP`, issue type "Release notes, documents & binaries"
+- All required fields mapped from `config/pipeline.json`
+- New/existing detection via JQL on Release Name (`cf[10563]`), exact match (not contains)
+- Approve endpoint zips binaries → creates ticket → uploads attachment → writes `jira_ticket_key` + `jira_ticket_url` back to state
+- Two-step save pattern protects against partial failure (ticket created but attachment failed, etc.)
+- See `HANDOFF.md` for the non-obvious traps (scoped tokens don't work, search endpoint moved, delete via API blocked)
 
 ### Phase 5 — Product Control Center
 **Goal:** Full operations platform with pluggable pipelines

@@ -72,12 +72,31 @@
 - [x] **Block 4: Services + Pipeline Stubs** — orchestrator (scan workflow), patch_service (approve with two-step save), binaries fetcher, docs stub, 16 tests
 - **Total: 99 tests passing** (`cd backend && pytest tests/ -v -k "not integration"`)
 
-### Not started
+### Completed — Block 5 + Frontend (2026-04-08 → 2026-04-10)
 
-- [ ] Block 5: FastAPI App + API Endpoints (10 endpoints)
-- [ ] Frontend (React + Vite + Tailwind dashboard)
+- [x] **Block 5: FastAPI App + API Endpoints** — 10 endpoints, error handling, 22 tests added (total **121 tests passing**)
+- [x] **Frontend F1: Scaffold + Shared Code** — Vite, theme tokens, types, API client
+- [x] **Frontend F2: Layout + Dashboard** — sidebar, header, summary cards, product cards
+- [x] **Frontend F3: Pipeline View** — filter bar, actionable + history tables
+- [x] **Frontend F4: Modals + Actions** — patch detail modal, Jira approval modal (currently dry-run)
+- [x] **Frontend F5: Polish** — loading skeletons, error toasts, sidebar animation
+- [x] **Zendesk scraper prototype** — `scripts/test_zendesk_scraper.py` validated against `cyberjetsupport.zendesk.com` (curl_cffi + legacy `/access/login`)
+
+### Deferred
+
+- [ ] Frontend F6: Testing — full plan saved in `PLAN_FRONTEND_TESTING.md`
 - [ ] Docker setup
-- [ ] Docs pipeline (stubbed — no DOC/ folders in tracked range)
+
+### Next phase — Docs pipeline
+
+Full design captured in [`PLAN_DOCS_PIPELINE.md`](PLAN_DOCS_PIPELINE.md). Key decisions:
+- Release notes come from **Zendesk**, not from SFTP `DOC/` folders (the original assumption was dropped)
+- New status value `not_found` added to `ReleaseNotesState`
+- New `last_run` sub-object on both `BinariesState` and `ReleaseNotesState` (workflow status + run status as two orthogonal state machines)
+- Three-pass main scan (SFTP discovery → binaries pass → docs pass)
+- Auto-fetch acts on `not_started` only; `not_found` recovery is manual button (or future email webhook) — never blind cron polling
+- Targeted refetch endpoint shared between UI button and future webhook
+- Persisted scan history in `state/scans/`
 
 ---
 

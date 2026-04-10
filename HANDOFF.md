@@ -1,7 +1,9 @@
 # Implementation Handoff
 
-**Date:** 2026-04-08
+**Date:** 2026-04-08 (last updated 2026-04-10)
 **Author:** Alexandre Fiaschi (assisted by Claude Code)
+
+**Status:** Backend complete (5 blocks, 121 tests). Frontend complete F1–F5 (F6 testing deferred). Next phase is the **docs pipeline** — design in [PLAN_DOCS_PIPELINE.md](PLAN_DOCS_PIPELINE.md). Read that doc before starting any docs-pipeline work.
 
 ---
 
@@ -37,15 +39,9 @@ Run `python scripts/test_zendesk_scraper.py --check-auth --verbose` to verify au
 
 ---
 
-## Known Issues — To Fix During Frontend Build
+## Mockup → Frontend (historical)
 
-1. **Mockup uses hardcoded data** — Real state is 31 pending binaries, 0 published. Mockup is design reference only — frontend fetches from API.
-
-2. **Mockup timeline uses fake timestamps** — `PatchDetailModal` fabricates steps. **Fix:** Use real per-pipeline timestamps from API response.
-
-3. **Mockup description doesn't recompute** — Editing Release Name or Create/Update/Remove doesn't update description. **Fix:** Add `useEffect` in `JiraApprovalModal.tsx`.
-
-4. **Mockup buttons are placeholders** — All `href="#"`, no handlers. Expected — real handlers built during Block F4.
+The original mockup gaps (hardcoded data, fake timestamps, non-recomputing description, placeholder buttons) were all addressed during F2–F4. The live frontend reads from the API, uses real per-pipeline timestamps, recomputes the Jira description via `useEffect`, and wires real handlers. See [COMPLETED_PLAN_FRONTEND.md](COMPLETED_PLAN_FRONTEND.md) for the original plan and the F4 design notes below for what was actually built.
 
 ---
 

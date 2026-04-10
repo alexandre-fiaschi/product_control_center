@@ -1,5 +1,7 @@
 # Frontend Implementation Plan
 
+> **Status: COMPLETED (F1–F5).** Frontend blocks F1 through F5 are built and live in [frontend/src/](frontend/src/). F6 (testing) is deferred — see [PLAN_FRONTEND_TESTING.md](PLAN_FRONTEND_TESTING.md). This file is the original plan kept for historical reference. For the actual built UI structure see the source. For docs-pipeline UI changes (additive), see [PLAN_DOCS_PIPELINE.md §2 Block C](PLAN_DOCS_PIPELINE.md).
+
 ## Context
 
 The frontend is a **React + Vite** (TypeScript) + Tailwind app that serves as the UI for the OpsComm Pipeline. It's an internal ops tool used by one person (Alex) on localhost. It talks to the FastAPI backend via `/api/*` calls — no direct SFTP, Jira, or file system access.
