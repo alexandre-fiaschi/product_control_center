@@ -9,7 +9,7 @@ Unit 4 (Block B prototype) tried two heuristic PDF extractors — `opendataloade
 
 This document captures the alternative approach: **send the PDF directly to Claude, get a structured JSON record back, render the DOCX from the record.** Claude reads the PDF visually and returns clean structure in one shot. No heuristics, no filters.
 
-The structured record also becomes a **persistent source of truth** stored in `state/release_notes/<product>.json` (per [PLAN_DOCS_PIPELINE.md](PLAN_DOCS_PIPELINE.md) — see the Unit 4 / Unit 5 sections). DOCX generation reads the record. The frontend can read the record. If Cyberjet ever delivers source `.docx` files we replace the extraction step but keep the same downstream.
+The structured record also becomes a **persistent source of truth** stored in `state/release_notes_items/<product>.json` (per [PLAN_DOCS_PIPELINE.md](PLAN_DOCS_PIPELINE.md) — see the Unit 4 / Unit 5 sections). DOCX generation reads the record. The frontend can read the record. If Cyberjet ever delivers source `.docx` files we replace the extraction step but keep the same downstream.
 
 ## Manual validation in claude.ai
 
@@ -22,7 +22,7 @@ Before building any code, we tested the approach by hand: pasted `8.0.18.1 - Rel
 Pasted into claude.ai with the PDF attached:
 
 ```
-You are extracting structured data from a CAE release notes PDF.
+You are extracting structured data from a release notes PDF.
 
 Read the attached PDF and output a JSON array. Each element is one AM
 item (one feature, fix, or note) in the order it appears in the document.
@@ -210,69 +210,94 @@ Index ordering is **top-to-bottom, then left-to-right** by bbox top-y (matching 
 The flow becomes:
 
 ```
-┌─────────────────────────────┐
-│ 1. PDF lands on disk        │  (Unit 3: Zendesk fetch)
-└─────────────┬───────────────┘
+┌──────────────────────────────────┐
+│ 1. PDF lands on disk             │  (Unit 3: Zendesk fetch)
+└─────────────┬────────────────────┘
               │
               ▼
-┌─────────────────────────────┐
-│ 2. Extract images with      │  pdfplumber → PNG bytes per image
-│    pdfplumber               │  Save under release_notes/images/
-│                             │  Write manifest.json
-└─────────────┬───────────────┘
+┌──────────────────────────────────┐
+│ 2. Extract images (pypdfium2)    │  Save PNG bytes per image under
+│                                  │  release_notes/images/
+│                                  │  Compute bbox, dims, sha256, IDs
+└─────────────┬────────────────────┘
               │
               ▼
-┌─────────────────────────────┐
-│ 3. Build manifest summary   │  list of (id, page, dimensions)
-│    text for Claude          │  Plain text, fed as a user message
-└─────────────┬───────────────┘
+┌──────────────────────────────────┐
+│ 3. Pre-filter chrome images      │  Logo, tiny icons, page bands marked
+│                                  │  `chrome: true`, NOT sent to Claude
+└─────────────┬────────────────────┘
               │
               ▼
-┌─────────────────────────────┐
-│ 4. Call Claude with         │  - PDF as document content block
-│    PDF + manifest text +    │  - Manifest as user message
-│    tool definition          │  - System prompt explains rules
-└─────────────┬───────────────┘
+┌──────────────────────────────────┐
+│ 4. Build user message:           │  - PDF as document content block
+│                                  │  - Each content image as its own
+│                                  │    image content block, in the
+│                                  │    same order as the manifest
+│                                  │  - Manifest text listing IDs +
+│                                  │    page / position / dimensions
+└─────────────┬────────────────────┘
               │
               ▼
-┌─────────────────────────────┐
-│ 5. Claude calls             │  Each call references images by ID
-│    save_release_note_item   │  e.g. {"type":"image","image_id":"p2_img1",...}
-│    once per AM item         │
-└─────────────┬───────────────┘
+┌──────────────────────────────────┐
+│ 5. Call Claude with the PDF,     │  Claude sees both the rendered PDF
+│    image blocks, tool definition │  AND each image separately. Matches
+│                                  │  screenshots to IDs visually.
+└─────────────┬────────────────────┘
               │
               ▼
-┌─────────────────────────────┐
-│ 6. We collect items,        │  Validate: every image_id exists in
-│    build the record,        │  the manifest. Update manifest with
-│    persist                  │  Claude's `describes` captions.
-└─────────────┬───────────────┘
+┌──────────────────────────────────┐
+│ 6. Claude calls                  │  Each call references images by ID
+│    save_release_note_item        │  {"type":"image","image_id":"p2_img1",...}
+│    once per AM item              │
+└─────────────┬────────────────────┘
               │
               ▼
-┌─────────────────────────────┐
-│ 7. DOCX render reads        │  No PDF parsing at render time.
-│    record + images/         │  doc.add_picture(images/p2_img1.png)
-└─────────────────────────────┘
+┌──────────────────────────────────┐
+│ 7. Collect items, validate,      │  Validate: every image_id exists in
+│    persist record                │  the manifest.
+└─────────────┬────────────────────┘
+              │
+              ▼
+┌──────────────────────────────────┐
+│ 8. DOCX render reads record      │  No PDF parsing at render time.
+│    + images/ from disk           │  doc.add_picture(images/p2_img1.png)
+└──────────────────────────────────┘
 ```
 
-The manifest text we feed Claude looks like:
+The user message we build for step 4 looks like:
 
 ```
-Image manifest for this PDF (use these exact IDs in image blocks):
+[document block: <PDF bytes>]
 
-p1_img1 (page 1, 72×72 px) — top-left corner of page 1
-p2_img1 (page 2, 1248×372 px) — upper area of page 2
-p2_img2 (page 2, 884×440 px) — middle area of page 2
-p3_img1 (page 3, 1820×1320 px) — upper area of page 3
-p3_img2 (page 3, 156×84 px) — middle area of page 3
-p4_img1 (page 4, 802×600 px) — upper area of page 4
-p4_img2 (page 4, 1620×1180 px) — lower area of page 4
+[image block: <p2_img1.png bytes>]
+[image block: <p2_img2.png bytes>]
+[image block: <p3_img1.png bytes>]
+[image block: <p4_img1.png bytes>]
+[image block: <p4_img2.png bytes>]
 
-When you reference an image, use ONLY these IDs. Never invent IDs.
+[user text]:
+Image manifest (use these exact IDs in image blocks). Each image block
+above corresponds to one of these IDs, in the same order.
+
+p2_img1 — page 2, upper area, 1248×372 px
+p2_img2 — page 2, middle area, 884×440 px
+p3_img1 — page 3, upper area, 1820×1320 px
+p4_img1 — page 4, upper area, 802×600 px
+p4_img2 — page 4, lower area, 1620×1180 px
+
+When you reference an image from the PDF, match it visually against
+the image blocks above and use the exact ID. Never invent IDs.
 Never reference an image that isn't in this list.
 ```
 
-Position descriptions ("upper area of page 2", "lower area of page 4") are computed from the bbox y-coordinates and serve as a hint to help Claude align IDs with what it sees in the rendered PDF.
+Chrome images (logo, tiny icons, page bands) are pre-filtered and never appear in the image blocks or the manifest text. Position strings ("upper area", "lower area") come from the bbox y-coordinates to give Claude a rough spatial hint. No captions, no AI-generated descriptions — just the factual metadata we already computed during extraction.
+
+### Why send images as separate content blocks
+
+Giving Claude each image as its own content block solves the identity problem:
+- Claude sees the embedded screenshot inside the PDF AND the isolated image side-by-side
+- Visual comparison is trivial for Claude — no guessing, no reading-order inference
+- Cost: ~1500 input tokens per image. For a 32-page PDF with 30 content images, ~45k extra tokens, ~$0.15. Negligible.
 
 ### Pre-filtering chrome images during extraction
 
@@ -421,7 +446,7 @@ This becomes a new unit. Calling it **Unit 4.5** because it sits between the pro
 - `backend/app/integrations/claude/extractor.py` — `extract_release_note(pdf_path) → ReleaseNoteRecord` using tool-use with the schemas defined in this doc
 - `backend/app/state/release_notes_models.py` — Pydantic models for the record schema (`ReleaseNoteRecord`, `ReleaseNoteSection`, `ReleaseNoteItem`, `ParagraphBlock`, `SubheadingBlock`, `ImageBlock`, `ReleaseNotesIndex`)
 - `backend/app/state/release_notes_store.py` — `load_release_notes(product_id)`, `save_release_notes(...)`, `get_record(...)`, `upsert_record(...)`. Mirrors `state/manager.py`. Uses the same atomic-write pattern.
-- `state/release_notes/` directory — gitignored except for a placeholder
+- `state/release_notes_items/` directory — gitignored except for a placeholder
 - `docs_example/conversion_prototype/.cache/claude/` — cached Claude outputs per PDF (one JSON per release note, keyed by source PDF hash)
 
 **Files to modify:**
@@ -604,7 +629,7 @@ Two new fields on `ReleaseNotesState`:
 - `record_extracted_at: datetime | None` — when Claude last ran
 - `record_extractor_version: int | None` — which extractor version produced the current record
 
-The record itself lives in `state/release_notes/<product>.json`, NOT on the patch tracker. The patch tracker just remembers "yes, we have a record for this version, here's how fresh it is."
+The record itself lives in `state/release_notes_items/<product>.json`, NOT on the patch tracker. The patch tracker just remembers "yes, we have a record for this version, here's how fresh it is."
 
 The orchestrator's docs pass after Unit 4.5:
 
@@ -682,12 +707,16 @@ Unit 4.5 splits into 5 blocks. Blocks 1, 2, 3 are independent and can run in par
 - Fixture-based orchestrator test
 - Update `config/pipeline.json` with `claude.model`, `claude.extractor_version`, `claude.max_retries`, `claude.timeout_s`
 
-## Open questions
+## Decisions
 
-- **How does Claude reference a specific image when a page has multiple?** v1: assume body block sequence is enough (Claude orders images by their reading-order position, we trust it). v2 if needed: add `index_on_page` to `ImageBlock` and have Claude fill it.
-- **What happens when validation fails?** v1: retry once with a feedback message describing the error. Fail loudly on second failure (raises exception, lifecycle marks `last_run.state = failed`). v2 if needed: more retries, partial-record recovery.
-- **Which Claude model?** Default to `claude-opus-4-6` (best quality, biggest context). Configurable in `config/pipeline.json` so we can A/B against `claude-sonnet-4-6` if cost matters.
-- **Where does the API key live?** `.env` file as `ANTHROPIC_API_KEY`. Same pattern as `JIRA_API_TOKEN_NO_SCOPES` and `ZENDESK_PASSWORD`. Never committed.
+- **Multiple images per page:** handled by the `p{page}_img{index}` ID convention. Index is 1-based reading order (top-to-bottom, left-to-right). No body-block ambiguity — Claude always references a specific image by ID.
+- **Validation failures we handle ourselves** (Claude-specific only): tool-call schema violation, unknown `image_id`, empty result with no tool calls. Retry once with a feedback message; fail loudly on second failure. `lifecycle.run_cell` catches the exception, marks `last_run.state = failed`, next scan retries.
+- **Network / rate-limit errors** (429, 5xx, timeouts) are handled by the Anthropic SDK's built-in retry with exponential backoff. We don't wrap them.
+- **Claude model:** default `claude-opus-4-6`. Configurable in `config/pipeline.json` under `claude.model`. A/B against sonnet possible later if cost matters.
+- **API key:** `ANTHROPIC_API_KEY` in `.env`. Same pattern as `JIRA_API_TOKEN_NO_SCOPES` and `ZENDESK_PASSWORD`. Alex adds it manually; never committed.
+- **State file name and location:** `state/release_notes_items/<product>.json`. Separate from `state/patches/` to avoid confusion with patch binaries state.
+- **Item ID field:** `am_card` (renamed from `code` to avoid clash with the `code` body-block type which represents raw machine-formatted text like ACARS messages / SQL / logs).
+- **Customers field:** `customers: list[str]` (not a single string — one AM item can belong to multiple customers).
 
 ## Verdict
 
