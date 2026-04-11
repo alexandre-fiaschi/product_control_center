@@ -91,3 +91,22 @@ OpsCommDocsPipeline/
 - **State model:** Always use the nested structure from `state/patches/*.json` (binaries + release_notes sub-objects). The scripts use an outdated flat model — don't copy it. The docs pipeline adds two new things to this model — see [PLAN_DOCS_PIPELINE.md](PLAN_DOCS_PIPELINE.md) section 3: a `not_found` value on `release_notes.status`, and a `last_run` sub-object on **both** tracks (workflow status and run status are two orthogonal state machines — never put `failed` or `error` in workflow status).
 - **Approve endpoint logic:** Empty request body = mark as published (skip Jira). Body with Jira fields = full flow. Same endpoint, no separate routes.
 - **Docs pipeline source:** release notes come from **Zendesk**, not from a `DOC/` subfolder on SFTP. Older parts of `ARCHITECTURE.md` mention `DOC/` detection — that approach was dropped. See `PLAN_DOCS_PIPELINE.md`.
+
+## Output Style (strict — applies to every conversation in this project)
+
+Be terse when explaining. Be thorough when implementing. Two different modes:
+
+**Explaining / talking with Alex:**
+- Lead with the answer or action. No preamble.
+- Don't restate the question. Don't summarize what you just did — the diff and tool results already show it.
+- One short paragraph per point. No filler ("Great!", "Let me…", "I'll now…", "Perfect!").
+- No tables, bullet lists, or headings unless the answer genuinely needs structure or Alex asked for them.
+- When proposing options, number them (1, 2, 3) and one line each. No multi-paragraph pitches.
+- If you can say it in one sentence, use one sentence.
+- Only expand when Alex asks "explain more", "details", or "why".
+- Goal: keep the terminal uncluttered so Alex can read fast and ask follow-ups.
+
+**Implementing code:**
+- Don't be lazy. Read the relevant files, understand the existing patterns, write complete and correct code.
+- Tests, logging, error handling — all required per the agent rules above.
+- Verbose code when needed is fine. Verbose chat is not.

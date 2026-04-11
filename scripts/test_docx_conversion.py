@@ -885,11 +885,12 @@ def convert(
     if prebuilt_json is not None:
         if not prebuilt_json.exists():
             raise FileNotFoundError(f"--json path not found: {prebuilt_json}")
-        json_path = prebuilt_json
-        logger.info(
-            "extract.skipped reason=prebuilt_json json=%s",
-            json_path.relative_to(PROJECT_ROOT),
-        )
+        json_path = prebuilt_json.resolve()
+        try:
+            json_rel = json_path.relative_to(PROJECT_ROOT)
+        except ValueError:
+            json_rel = json_path
+        logger.info("extract.skipped reason=prebuilt_json json=%s", json_rel)
     else:
         json_path = extract_pdf(pdf_path, mode, use_cache)
     payload = json.loads(json_path.read_text(encoding="utf-8"))
