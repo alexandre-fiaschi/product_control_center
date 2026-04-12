@@ -4,8 +4,6 @@
 
 Automate the ingestion of software releases from an SFTP server for the OpsComm / ACARS product family. The pipeline scans for new patches, downloads them, and presents them for manual approval before publishing to the CAE community portal. This is the first module of a larger Product Control Center platform.
 
-**Current phase:** MVP (Phase 0) **complete** — backend done (5 blocks, 121 tests), frontend done (F1–F5; F6 testing deferred). Next phase is the **docs pipeline** (Zendesk fetch + DOCX template injection) — design captured in [PLAN_DOCS_PIPELINE.md](PLAN_DOCS_PIPELINE.md).
-
 ## Tech Stack
 
 - **Backend:** Python + FastAPI
@@ -28,14 +26,6 @@ cd backend && uvicorn app.main:app                    # serves everything on :80
 # Tests
 cd backend && pytest tests/ -v -k "not integration"
 ```
-
-## Pipeline Flow
-
-```
-SFTP scan → discover → download → pending_approval → approved → published
-```
-
-Each patch tracks **binaries** and **release notes** independently (separate Jira tickets).
 
 ## Project Structure
 
@@ -88,9 +78,6 @@ OpsCommDocsPipeline/
 
 - **Each block = code + tests + logging + commit.** Don't skip tests or logging.
 - **Test before commit:** `cd backend && pytest tests/ -v -k "not integration"` must pass before every push.
-- **State model:** Always use the nested structure from `state/patches/*.json` (binaries + release_notes sub-objects). The scripts use an outdated flat model — don't copy it. The docs pipeline adds two new things to this model — see [PLAN_DOCS_PIPELINE.md](PLAN_DOCS_PIPELINE.md) section 3: a `not_found` value on `release_notes.status`, and a `last_run` sub-object on **both** tracks (workflow status and run status are two orthogonal state machines — never put `failed` or `error` in workflow status).
-- **Approve endpoint logic:** Empty request body = mark as published (skip Jira). Body with Jira fields = full flow. Same endpoint, no separate routes.
-- **Docs pipeline source:** release notes come from **Zendesk**, not from a `DOC/` subfolder on SFTP. Older parts of `ARCHITECTURE.md` mention `DOC/` detection — that approach was dropped. See `PLAN_DOCS_PIPELINE.md`.
 
 ## Output Style (strict — applies to every conversation in this project)
 
@@ -110,3 +97,55 @@ Be terse when explaining. Be thorough when implementing. Two different modes:
 - Don't be lazy. Read the relevant files, understand the existing patterns, write complete and correct code.
 - Tests, logging, error handling — all required per the agent rules above.
 - Verbose code when needed is fine. Verbose chat is not.
+
+
+1. Think Before Coding
+Don't assume. Don't hide confusion. Surface tradeoffs.
+
+Before implementing:
+
+State your assumptions explicitly. If uncertain, ask.
+If multiple interpretations exist, present them - don't pick silently.
+If a simpler approach exists, say so. Push back when warranted.
+If something is unclear, stop. Name what's confusing. Ask.
+
+2. Simplicity First
+Minimum code that solves the problem. Nothing speculative.
+
+No features beyond what was asked.
+No abstractions for single-use code.
+No "flexibility" or "configurability" that wasn't requested.
+No error handling for impossible scenarios.
+If you write 200 lines and it could be 50, rewrite it.
+Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+3. Surgical Changes
+Touch only what you must. Clean up only your own mess.
+
+When editing existing code:
+
+Don't "improve" adjacent code, comments, or formatting.
+Don't refactor things that aren't broken.
+Match existing style, even if you'd do it differently.
+If you notice unrelated dead code, mention it - don't delete it.
+When your changes create orphans:
+
+Remove imports/variables/functions that YOUR changes made unused.
+Don't remove pre-existing dead code unless asked.
+The test: Every changed line should trace directly to the user's request.
+
+4. Goal-Driven Execution
+Define success criteria. Loop until verified.
+
+Transform tasks into verifiable goals:
+
+"Add validation" → "Write tests for invalid inputs, then make them pass"
+"Fix the bug" → "Write a test that reproduces it, then make it pass"
+"Refactor X" → "Ensure tests pass before and after"
+For multi-step tasks, state a brief plan:
+
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+

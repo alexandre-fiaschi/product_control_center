@@ -49,6 +49,10 @@ class Settings(BaseSettings):
         return PROJECT_ROOT / "state" / "patches"
 
     @property
+    def release_notes_state_dir(self) -> Path:
+        return PROJECT_ROOT / "state" / "release_notes_items"
+
+    @property
     def patches_dir(self) -> Path:
         return PROJECT_ROOT / "patches"
 

@@ -12,6 +12,14 @@ from app.state.models import (
     ReleaseNotesState,
     VersionData,
 )
+from app.state.release_notes_models import (
+    CodeBlock,
+    HeadingBlock,
+    ImageBlock,
+    ParagraphBlock,
+    ReleaseNoteItem,
+    ReleaseNoteRecord,
+)
 
 
 def pytest_addoption(parser):
@@ -108,6 +116,44 @@ def sample_tracker_json():
             }
         },
     }
+
+
+@pytest.fixture
+def tmp_release_notes_dir(tmp_path):
+    d = tmp_path / "state" / "release_notes_items"
+    d.mkdir(parents=True)
+    return d
+
+
+@pytest.fixture
+def sample_release_note_item():
+    return ReleaseNoteItem(
+        section="New Features",
+        am_card="AM1393",
+        customers=["HAL"],
+        title="Adding characters replacement feature for freetext uplink",
+        summary="Lets admins define character replacements for free-text uplink messages.",
+        body=[
+            HeadingBlock(level=3, text="Setting"),
+            ParagraphBlock(text='Go to "Global References->Character Replacement" menu.'),
+            ImageBlock(image_id="p2_img1", describes="Character Replacement screen"),
+            CodeBlock(text="SELECT * FROM replacement_rules WHERE direction = 'UPLINK'"),
+        ],
+    )
+
+
+@pytest.fixture
+def sample_release_note_record(sample_release_note_item):
+    return ReleaseNoteRecord(
+        version="8.0.18.1",
+        extracted_at="2026-04-11T12:00:00+00:00",
+        extractor="claude",
+        extractor_version=1,
+        source_pdf_path="patches/ACARS_V8_0/8.0.18.1/release_notes/8.0.18.1 - Release Notes.pdf",
+        source_pdf_hash="abc123def456",
+        source_pdf_pages=32,
+        items=[sample_release_note_item],
+    )
 
 
 @pytest.fixture

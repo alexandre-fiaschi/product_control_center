@@ -8,3 +8,4 @@ scripts/dry_run_output.txt
 logs/
 docs_example/
 /patches/
+state/release_notes_items/*.json
