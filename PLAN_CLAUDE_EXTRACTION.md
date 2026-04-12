@@ -603,9 +603,11 @@ def render_record_to_docx(record, template_path, output_path, product_name):
     doc.save(output_path)
 ```
 
-That's the entire body emitter — about 30 lines. **Everything we wrote in the current `test_docx_conversion.py` for fast/hybrid filtering, OCR-noise dropping, page-chrome detection, heading-level normalization, AM-item promotion, list emission, table emission, and Cyberjet-logo filtering gets DELETED.** The Claude record already has clean structured data; we're just walking it.
+That's the entire body emitter — about 30 lines. The Claude record already has clean structured data; we're just walking it.
 
-Cover-page handling (the four `KEEP —` functions) and the Flightscape template prep stay — those are about the template, not the PDF.
+**Fast / hybrid modes are kept as fallbacks.** The existing `--mode fast` and `--mode hybrid` branches in `scripts/test_docx_conversion.py` — including all the filtering, OCR-noise dropping, page-chrome detection, heading-level normalization, AM-item promotion, list/table emission, and Cyberjet-logo filtering — stay in place unchanged. `--mode claude` is added as a third option (and becomes the default). Nothing gets deleted until Claude extraction has been validated on several real release notes and Alex explicitly signs off. This gives us a safety net: if Claude output disappoints on some PDF, we rerun with `--mode fast` or `--mode hybrid` and still get a DOCX.
+
+Cover-page handling (the four `KEEP —` functions) and the Flightscape template prep stay — those are about the template, not the PDF — and are shared across all three modes.
 
 ### Image lookup
 
@@ -666,15 +668,16 @@ Caching means re-renders of the same PDF cost zero.
 
 Unit 4.5 splits into 5 blocks. Blocks 1, 2, 3 are independent and can run in parallel. Block 4 depends on 1+2+3. Block 5 depends on 4.
 
-### Block 1 — Image extractor
-- New module: `backend/app/integrations/pdf/image_extractor.py`
-- Library: pypdfium2 (BSD, original image bytes, already in venv)
-- Walks every PDF page, extracts embedded images as PNG bytes
-- Computes bbox, dimensions, sha256, sorts by reading order, assigns IDs (`p{page}_img{index}`)
-- Flags chrome images (Cyberjet logo, top-band) — saved but excluded from Claude's manifest
-- Writes PNGs + `manifest.json` to `<pdf_dir>/images/`
-- Idempotent: if manifest hash matches PDF hash, skip
-- Tested with a fixture PDF
+### Block 1 — Image extractor ✅ DONE (2026-04-12)
+- New module: [backend/app/integrations/pdf/image_extractor.py](backend/app/integrations/pdf/image_extractor.py)
+- Library: **pdfplumber** (chosen over pypdfium2 — single API gives bbox, dimensions, and stream in one call)
+- Walks every PDF page, extracts embedded images as PNG bytes. Two decode paths: JPEG/JPEG2000 streams go straight to Pillow; FlateDecode'd raw pixel arrays decoded via `Image.frombytes` with explicit mode + size. Raster fallback via `page.crop().to_image(200dpi)` for anything neither path handles.
+- Computes bbox, dimensions (no sha256 — dropped as unnecessary), sorts by reading order (top-to-bottom, left-to-right), assigns IDs (`p{page}_img{index}`)
+- Flags chrome images via geometry heuristic (top < 160pt AND width/height < 200pt) — saved on disk, flagged `chrome: true`, will be excluded from Claude's manifest in Block 3
+- Writes PNGs + `manifest.json` atomically (fcntl.flock + os.replace, mirrors `state/manager.py`) to `<pdf_dir>/images/`
+- Idempotent: cache check is `manifest.json exists AND extractor_version matches` — no PDF hashing. Pass `force=True` to override.
+- Tested: 15 tests — 8 pure-function unit (chrome detection, reading-order sort) + 7 integration against real 8.0.18.1 PDF (35 pages, 90 images, 35 chrome = 1 per page). Integration tests marked `@pytest.mark.integration`.
+- Added `pdfplumber` and `Pillow` to `backend/requirements.txt`
 
 ### Block 2 — Record models + store
 - `backend/app/state/release_notes_models.py` — Pydantic models for `ReleaseNoteRecord`, `ReleaseNoteItem`, all 8 body block types, `ReleaseNotesIndex`, `ImageManifest`

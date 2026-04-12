@@ -5,4 +5,6 @@ paramiko
 requests
 curl_cffi
 beautifulsoup4
+pdfplumber
+Pillow
 pytest
