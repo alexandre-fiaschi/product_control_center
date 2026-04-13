@@ -44,6 +44,7 @@ Extraction modes:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import os
@@ -76,6 +77,7 @@ DEFAULT_TEMPLATE = (
     / "Flightscape-English-External Business Document.docx"
 )
 CACHE_ROOT = PROJECT_ROOT / "docs_example" / "conversion_prototype" / ".cache"
+CLAUDE_CACHE_ROOT = CACHE_ROOT / "claude"
 
 HYBRID_HOST = "127.0.0.1"
 HYBRID_PORT = 5002
@@ -257,6 +259,8 @@ def resolve_mode(requested: str) -> str:
             )
             return "fast"
         return "hybrid"
+    if requested == "claude":
+        return "claude"
     raise ValueError(f"Unknown extraction mode: {requested}")
 
 
@@ -298,6 +302,144 @@ def extract_pdf(pdf_path: Path, mode: str, use_cache: bool) -> Path:
         pdf_path.name, mode, json_path.relative_to(PROJECT_ROOT), json_path.stat().st_size,
     )
     return json_path
+
+
+# ─────────────────────────── claude mode ───────────────────────────
+
+
+def _claude_deps():
+    """Lazy-import Claude extractor + image extractor from backend/.
+
+    Only called for ``--mode claude`` so the fast/hybrid modes don't need
+    the backend package on sys.path.
+    """
+    sys.path.insert(0, str(PROJECT_ROOT / "backend"))
+    from app.integrations.pdf.image_extractor import extract_images  # noqa: E402
+    from app.integrations.claude.extractor import extract_release_note  # noqa: E402
+    from app.integrations.claude.client import ClaudeClient  # noqa: E402
+    return extract_images, extract_release_note, ClaudeClient
+
+
+def _claude_cache_path(pdf_path: Path) -> Path:
+    """Cache path keyed by PDF content hash."""
+    pdf_hash = hashlib.sha256(pdf_path.read_bytes()).hexdigest()
+    return CLAUDE_CACHE_ROOT / f"{pdf_hash}.json"
+
+
+def _load_claude_cache(pdf_path: Path):
+    """Load a cached ReleaseNoteRecord if it exists. Returns None on miss."""
+    cache_file = _claude_cache_path(pdf_path)
+    if not cache_file.exists():
+        return None
+    try:
+        sys.path.insert(0, str(PROJECT_ROOT / "backend"))
+        from app.state.release_notes_models import ReleaseNoteRecord  # noqa: E402
+        record = ReleaseNoteRecord.model_validate_json(cache_file.read_text())
+        logger.info("claude.cache.hit pdf=%s cache=%s", pdf_path.name, cache_file.name[:12])
+        return record
+    except Exception as exc:
+        logger.warning("claude.cache.invalid pdf=%s error=%s", pdf_path.name, exc)
+        return None
+
+
+def _save_claude_cache(pdf_path: Path, record) -> None:
+    """Persist a ReleaseNoteRecord to the Claude cache."""
+    CLAUDE_CACHE_ROOT.mkdir(parents=True, exist_ok=True)
+    cache_file = _claude_cache_path(pdf_path)
+    cache_file.write_text(record.model_dump_json(indent=2))
+    logger.info("claude.cache.saved pdf=%s cache=%s", pdf_path.name, cache_file.name[:12])
+
+
+def format_item_heading(item) -> str:
+    """Build the Heading 2 text for a release-note item.
+
+    Format: ``AM1393 [HAL] - Adding characters replacement feature``
+    """
+    heading = item.am_card
+    if item.customers:
+        heading += f" [{', '.join(item.customers)}]"
+    heading += f" - {item.title}"
+    return heading
+
+
+def render_record(doc: Document, record, images_dir: Path) -> dict[str, int]:
+    """Walk a ReleaseNoteRecord and emit content into the DOCX.
+
+    Replaces ``normalize_heading_levels`` + ``collect_image_bboxes`` +
+    ``walk_document`` for claude mode. Returns a counts dict for logging.
+    """
+    counts: dict[str, int] = {"sections": 0, "items": 0, "blocks": 0}
+
+    # Group items by section, preserving first-seen order
+    sections: dict[str, list] = {}
+    for item in record.items:
+        sections.setdefault(item.section, []).append(item)
+
+    for section_name, items in sections.items():
+        add_styled_paragraph(doc, section_name, "Heading 1")
+        counts["sections"] += 1
+
+        for item in items:
+            add_styled_paragraph(doc, format_item_heading(item), "Heading 2")
+            counts["items"] += 1
+
+            if item.summary:
+                add_styled_paragraph(doc, item.summary, DEFAULT_BODY_STYLE)
+
+            for block in item.body:
+                counts["blocks"] += 1
+                btype = block.type
+
+                if btype == "paragraph":
+                    add_styled_paragraph(doc, block.text, DEFAULT_BODY_STYLE)
+
+                elif btype == "heading":
+                    add_bold_body_paragraph(doc, block.text)
+
+                elif btype == "image":
+                    img_path = images_dir / f"{block.image_id}.png"
+                    if img_path.exists():
+                        try:
+                            doc.add_picture(str(img_path), width=MAX_IMAGE_WIDTH)
+                        except Exception as exc:
+                            logger.warning("image.embed.failed id=%s error=%s", block.image_id, exc)
+                    else:
+                        logger.warning("image.missing id=%s path=%s", block.image_id, img_path)
+
+                elif btype == "list":
+                    style = DEFAULT_NUMBERED_STYLE if block.ordered else DEFAULT_BULLET_STYLE
+                    for li_text in block.items:
+                        add_styled_paragraph(doc, li_text, style)
+
+                elif btype == "table":
+                    if block.headers or block.rows:
+                        n_cols = len(block.headers) if block.headers else (
+                            max((len(r) for r in block.rows), default=0)
+                        )
+                        total_rows = (1 if block.headers else 0) + len(block.rows)
+                        if n_cols > 0 and total_rows > 0:
+                            table = doc.add_table(rows=total_rows, cols=n_cols)
+                            row_idx = 0
+                            if block.headers:
+                                for c, h in enumerate(block.headers):
+                                    cell = table.rows[0].cells[c]
+                                    cell.paragraphs[0].text = h
+                                    if style_safe(doc, TABLE_HEADING_STYLE):
+                                        cell.paragraphs[0].style = doc.styles[TABLE_HEADING_STYLE]
+                                row_idx = 1
+                            for r in block.rows:
+                                for c, val in enumerate(r):
+                                    if c < n_cols:
+                                        cell = table.rows[row_idx].cells[c]
+                                        cell.paragraphs[0].text = val
+                                        if style_safe(doc, TABLE_TEXT_STYLE):
+                                            cell.paragraphs[0].style = doc.styles[TABLE_TEXT_STYLE]
+                                row_idx += 1
+
+                elif btype == "code":
+                    add_styled_paragraph(doc, block.text, DEFAULT_BODY_STYLE)
+
+    return counts
 
 
 # ─────────────────────────── template prep ───────────────────────────
@@ -882,20 +1024,37 @@ def convert(
         pdf_path.name, version, product, mode,
     )
 
-    if prebuilt_json is not None:
-        if not prebuilt_json.exists():
-            raise FileNotFoundError(f"--json path not found: {prebuilt_json}")
-        json_path = prebuilt_json.resolve()
-        try:
-            json_rel = json_path.relative_to(PROJECT_ROOT)
-        except ValueError:
-            json_rel = json_path
-        logger.info("extract.skipped reason=prebuilt_json json=%s", json_rel)
+    # ── Extraction ────────────────────────────────────────────────
+    if mode == "claude":
+        extract_images_fn, extract_release_note_fn, ClaudeClient = _claude_deps()
+        record = None
+        if use_cache:
+            record = _load_claude_cache(pdf_path)
+        if record is None:
+            manifest = extract_images_fn(pdf_path)
+            api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+            client = ClaudeClient(api_key)
+            record = extract_release_note_fn(
+                pdf_path, manifest, version=version, claude_client=client,
+            )
+            _save_claude_cache(pdf_path, record)
+        images_dir = pdf_path.parent / "images"
     else:
-        json_path = extract_pdf(pdf_path, mode, use_cache)
-    payload = json.loads(json_path.read_text(encoding="utf-8"))
-    image_root = json_path.parent  # opendataloader writes <stem>_images/ next to the JSON
+        if prebuilt_json is not None:
+            if not prebuilt_json.exists():
+                raise FileNotFoundError(f"--json path not found: {prebuilt_json}")
+            json_path = prebuilt_json.resolve()
+            try:
+                json_rel = json_path.relative_to(PROJECT_ROOT)
+            except ValueError:
+                json_rel = json_path
+            logger.info("extract.skipped reason=prebuilt_json json=%s", json_rel)
+        else:
+            json_path = extract_pdf(pdf_path, mode, use_cache)
+        payload = json.loads(json_path.read_text(encoding="utf-8"))
+        image_root = json_path.parent
 
+    # ── Shared template prep ─────────────────────────────────────
     doc = Document(str(template_path))
     cover_count = patch_cover_page(doc, cover_replacements(product, version))
     logger.info("cover.patched runs=%d", cover_count)
@@ -914,19 +1073,25 @@ def convert(
     else:
         logger.warning("toc.dirty.marked status=not_found")
 
-    level_map = normalize_heading_levels(payload)
-    logger.info("heading.normalize map=%s", level_map)
+    # ── Rendering ────────────────────────────────────────────────
+    if mode == "claude":
+        counts = render_record(doc, record, images_dir)
+        logger.info("convert.body.emitted breakdown=%s", counts)
+    else:
+        level_map = normalize_heading_levels(payload)
+        logger.info("heading.normalize map=%s", level_map)
 
-    image_bboxes = collect_image_bboxes(payload)
-    total_images = sum(len(v) for v in image_bboxes.values())
-    logger.info("image.bboxes.collected pages=%d total=%d", len(image_bboxes), total_images)
+        image_bboxes = collect_image_bboxes(payload)
+        total_images = sum(len(v) for v in image_bboxes.values())
+        logger.info("image.bboxes.collected pages=%d total=%d", len(image_bboxes), total_images)
 
-    counts = walk_document(doc, payload, image_root, level_map, image_bboxes)
-    logger.info(
-        "convert.body.emitted top_level_elements=%d breakdown=%s",
-        sum(counts.values()), counts,
-    )
+        counts = walk_document(doc, payload, image_root, level_map, image_bboxes)
+        logger.info(
+            "convert.body.emitted top_level_elements=%d breakdown=%s",
+            sum(counts.values()), counts,
+        )
 
+    # ── Save ─────────────────────────────────────────────────────
     output_path.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(output_path))
     saved = output_path.resolve()
@@ -939,20 +1104,21 @@ def convert(
         pdf_path.name, rel, saved.stat().st_size,
     )
 
-    # Drop the extractor's Markdown next to the DOCX so reviewers can see what
-    # the PDF was reduced to before the conversion logic ran. opendataloader
-    # writes the .md alongside the .json in the cache dir.
-    md_source = json_path.with_suffix(".md")
-    if md_source.exists():
-        md_target = output_path.with_suffix(".md")
-        shutil.copy2(md_source, md_target)
-        try:
-            md_rel = md_target.resolve().relative_to(PROJECT_ROOT)
-        except ValueError:
-            md_rel = md_target.resolve()
-        logger.info("convert.md.copied source=%s target=%s", md_source.name, md_rel)
-    else:
-        logger.warning("convert.md.missing source=%s", md_source)
+    # Drop the extractor's Markdown next to the DOCX (fast/hybrid only —
+    # claude mode doesn't produce an opendataloader markdown).
+    if mode != "claude":
+        json_path_local = json_path  # noqa: F841 — defined in the else branch above
+        md_source = json_path.with_suffix(".md")
+        if md_source.exists():
+            md_target = output_path.with_suffix(".md")
+            shutil.copy2(md_source, md_target)
+            try:
+                md_rel = md_target.resolve().relative_to(PROJECT_ROOT)
+            except ValueError:
+                md_rel = md_target.resolve()
+            logger.info("convert.md.copied source=%s target=%s", md_source.name, md_rel)
+        else:
+            logger.warning("convert.md.missing source=%s", md_source)
 
 
 # ─────────────────────────── CLI ───────────────────────────
@@ -968,9 +1134,10 @@ def parse_args() -> argparse.Namespace:
                    help="Where to write the generated DOCX")
     p.add_argument("--template", default=DEFAULT_TEMPLATE, type=Path,
                    help=f"Flightscape template path (default: {DEFAULT_TEMPLATE.relative_to(PROJECT_ROOT)})")
-    p.add_argument("--mode", choices=["fast", "hybrid"], default="fast",
+    p.add_argument("--mode", choices=["fast", "hybrid", "claude"], default="fast",
                    help="Extraction backend (default: fast). 'hybrid' requires "
-                        "opendataloader-pdf-hybrid running on 127.0.0.1:5002.")
+                        "opendataloader-pdf-hybrid running on 127.0.0.1:5002. "
+                        "'claude' uses the Claude API (requires ANTHROPIC_API_KEY).")
     p.add_argument("--product", default="Operations Communication Manager",
                    help="Product name to write on the cover page")
     p.add_argument("--no-cache", action="store_true",
@@ -985,6 +1152,10 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     setup_logging(args.verbose)
+
+    if args.mode == "claude" and args.prebuilt_json is not None:
+        logger.error("--json is not compatible with --mode claude")
+        return 2
 
     try:
         mode = resolve_mode(args.mode)

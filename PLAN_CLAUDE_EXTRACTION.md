@@ -697,13 +697,21 @@ Unit 4.5 splits into 5 blocks. Blocks 1, 2, 3 are independent and can run in par
 - Config: added `ANTHROPIC_API_KEY` to Settings, `claude` section to `pipeline.json` (model: `claude-sonnet-4-5-20250514`, 16384 max_tokens, 120s timeout), `anthropic` to requirements.txt
 - Tested: 31 tests — schema shape, user message construction (PDF block + chrome filtering + manifest text), system prompt content, item validation (happy path, bad am_card, unknown image_id, invalid format, unknown block type, heading level default, empty body, missing customers), client errors (empty key, auth failure, no tool calls), full extract flow (happy path, max_tokens warning, all-invalid raises, partial failure skips, API error propagation). All mocked — no live API in CI.
 
-### Block 4 — Wire into `test_docx_conversion.py`
-- New `--mode claude` branch in the script
-- Flow: extract images (block 1) → call Claude (block 3) → save record via store (block 2) → render DOCX
-- New ~30-line walker replaces ~600 lines of fast/hybrid filters
-- Image rendering: load `<pdf_dir>/images/<image_id>.png` from disk, no PDF re-parse
-- Render branches for the 8 block types — minimum viable for v1 (paragraph / subheading / image fully implemented; list / table / note / warning / code can fall back to `Body Text` initially and get proper styles later)
-- Manual eyeball test against 8.1.12.0, 8.0.16.1, 8.0.18.1
+### Block 4 — Wire into `test_docx_conversion.py` ✅ DONE (2026-04-13)
+- Added `--mode claude` to [scripts/test_docx_conversion.py](scripts/test_docx_conversion.py) alongside existing `fast` and `hybrid` modes
+- **Lazy imports:** Claude deps (`extract_images`, `extract_release_note`, `ClaudeClient`) loaded via `_claude_deps()` only when `--mode claude` is used — fast/hybrid still work without backend on sys.path
+- **Claude client constructed directly** with `os.environ["ANTHROPIC_API_KEY"]` instead of `from_settings()` — avoids pulling the full Settings singleton into a standalone script
+- **Caching:** results saved at `.cache/claude/<sha256>.json` keyed by PDF content hash. Cache hit skips Claude call entirely. `--no-cache` bypasses.
+- **`render_record(doc, record, images_dir)`** — new ~60-line walker replaces ~600 lines of fast/hybrid filters. Groups items by section (first-seen order), dispatches 6 body block types:
+  - `paragraph` → `Body Text`
+  - `heading` → bold body paragraph (sub-labels, not TOC headings)
+  - `image` → `doc.add_picture()` from `images/<image_id>.png`, `width=Inches(5.5)`
+  - `list` → `Bullet 1` / `Step 1` per item
+  - `table` → `doc.add_table()` with `Table Heading` / `Table Text` styles
+  - `code` → `Body Text` (monospace style deferred)
+- **Shared template prep reused unchanged:** `patch_cover_page`, `clean_cover_textboxes`, `strip_template_body`, `mark_toc_dirty`
+- **Guard:** `--json` + `--mode claude` rejected as incompatible
+- **No automated tests** — prototype script, tested by eyeballing DOCX output. Existing 234 backend tests still pass.
 
 ### Block 5 — Orchestrator integration
 - Add `record_extracted_at` and `record_extractor_version` fields to `ReleaseNotesState` in `backend/app/state/models.py`
