@@ -713,6 +713,17 @@ Unit 4.5 splits into 5 blocks. Blocks 1, 2, 3 are independent and can run in par
 - **Guard:** `--json` + `--mode claude` rejected as incompatible
 - **No automated tests** — prototype script, tested by eyeballing DOCX output. Existing 234 backend tests still pass.
 
+#### Live test results (2026-04-13, 8.0.18.1 - Release Notes.pdf, 35 pages)
+- **Agentic loop with `tool_choice: auto`** — Claude calls `save_release_note_item` once per turn, loop sends `tool_result: "saved"` back, continues until `stop_reason: end_turn`
+- **13 items extracted** across 3 sections (New Features, Defect Fixes, Not Tested), 151 body blocks, all AM cards correct
+- **14 API turns** (13 tool calls + 1 end_turn), **650k input tokens**, **8.7k output tokens** → **$3.47 total**
+- **Prompt caching working:** Turn 1 = 41k uncached (cache write). Later turns: ~44-50k total per turn but ~60% cache reads (don't count toward rate limit). Console shows 64k cache read tokens on average.
+- **Rate limit (Tier 1, 30k input/min):** hit on most turns, SDK retries 2x then our code reads `retry-after` header and waits. Waits ranged 64-182s. Total wall time ~23 minutes.
+- **Connection error handling:** SSL drops caught and retried with 10s wait (happened once in earlier run, fixed).
+- **Cost tracking persisted:** `ExtractionUsage` on `ReleaseNoteRecord` with input_tokens, output_tokens, model, cost_usd
+- **Output files:** `8.0.18.1_claude.docx` (6.2MB with embedded images) + `8.0.18.1_claude.json` (full record for inspection)
+- **Next optimization session:** reduce cost by (a) upgrading to Tier 2 ($5 deposit → 80k input/min, eliminates rate limit waits), (b) reducing input tokens (drop standalone image blocks, send PDF only), (c) try Sonnet 4.6 for quality comparison
+
 ### Block 5 — Orchestrator integration
 - Add `record_extracted_at` and `record_extractor_version` fields to `ReleaseNotesState` in `backend/app/state/models.py`
 - Add the extraction step to the docs pass in `backend/app/services/orchestrator.py`, wrapped in `lifecycle.run_cell` with `step_name="extract"`
@@ -724,7 +735,8 @@ Unit 4.5 splits into 5 blocks. Blocks 1, 2, 3 are independent and can run in par
 
 - **Multiple images per page:** handled by the `p{page}_img{index}` ID convention. Index is 1-based reading order (top-to-bottom, left-to-right). No body-block ambiguity — Claude always references a specific image by ID.
 - **Validation failures we handle ourselves** (Claude-specific only): tool-call schema violation, unknown `image_id`, empty result with no tool calls. Retry once with a feedback message; fail loudly on second failure. `lifecycle.run_cell` catches the exception, marks `last_run.state = failed`, next scan retries.
-- **Network / rate-limit errors** (429, 5xx, timeouts) are handled by the Anthropic SDK's built-in retry with exponential backoff. We don't wrap them.
+- **Network / rate-limit errors:** SDK retries connection errors (2 attempts). For 429 rate limits, our code catches `RateLimitError`, reads the `retry-after` header, waits exactly that long, then retries once. For `APIConnectionError` (SSL drops), waits 10s and retries. This replaced the earlier approach of relying solely on SDK retries which was insufficient for Tier 1 rate limits.
+- **`tool_choice: auto`** (default) — NOT `"any"`. With `"any"`, Claude is forced to call a tool every turn and never sends `end_turn`, creating an infinite loop. With `"auto"`, Claude calls the tool when it has items and stops with `end_turn` when done.
 - **Claude model:** default `claude-opus-4-6`. Configurable in `config/pipeline.json` under `claude.model`. A/B against sonnet possible later if cost matters.
 - **API key:** `ANTHROPIC_API_KEY` in `.env`. Same pattern as `JIRA_API_TOKEN_NO_SCOPES` and `ZENDESK_PASSWORD`. Alex adds it manually; never committed.
 - **State file name and location:** `state/release_notes_items/<product>.json`. Separate from `state/patches/` to avoid confusion with patch binaries state.

@@ -8,6 +8,7 @@ internally — we don't add our own.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 import anthropic
@@ -65,6 +66,7 @@ class ClaudeClient:
         self._client = anthropic.Anthropic(
             api_key=api_key,
             timeout=float(timeout_s),
+            max_retries=2,  # default — handles connection errors; we handle 429s ourselves
         )
 
     @classmethod
@@ -87,65 +89,125 @@ class ClaudeClient:
         content_blocks: list[dict],
         tools: list[dict],
         system_prompt: str,
+        *,
+        max_items: int = 15,
     ) -> tuple[list[dict], str, dict]:
-        """Send a single request and collect all tool-use blocks.
+        """Run the agentic tool-use loop per Anthropic docs.
 
-        Claude can return multiple tool calls in one response. We use
-        ``tool_choice: auto`` so Claude calls the tool as many times as
-        needed and then stops with ``end_turn``.
+        Uses ``tool_choice: auto`` (default). Claude returns one or more
+        tool_use blocks per response. We execute them, send results back,
+        and loop while ``stop_reason == "tool_use"``.  Stops when Claude
+        sends ``end_turn`` or when ``max_items`` is reached (safety cap).
 
-        Returns ``(tool_use_blocks, stop_reason, usage_info)``.
-
-        Raises :class:`ClaudeExtractionError` on auth failure, timeout, or
-        when the response contains zero tool calls.
+        Returns ``(all_tool_calls, stop_reason, usage_info)``.
         """
-        try:
-            response = self._client.messages.create(
-                model=self._model,
-                max_tokens=self._max_tokens,
-                system=system_prompt,
-                messages=[{"role": "user", "content": content_blocks}],
-                tools=tools,
+        messages = [{"role": "user", "content": content_blocks}]
+        all_tool_calls: list[dict] = []
+        total_input = 0
+        total_output = 0
+        turn = 0
+
+        while True:
+            turn += 1
+            try:
+                response = self._client.messages.create(
+                    model=self._model,
+                    max_tokens=self._max_tokens,
+                    system=system_prompt,
+                    messages=messages,
+                    tools=tools,
+                )
+            except (anthropic.RateLimitError, anthropic.APIConnectionError) as exc:
+                if isinstance(exc, anthropic.RateLimitError):
+                    retry_after = getattr(exc.response, "headers", {}).get("retry-after")
+                    wait = int(retry_after) if retry_after else 60
+                    logger.info("Rate limited on turn %d, waiting %ds...", turn, wait)
+                else:
+                    wait = 10
+                    logger.warning("Connection error on turn %d, retrying in %ds...", turn, wait)
+                time.sleep(wait)
+                response = self._client.messages.create(
+                    model=self._model,
+                    max_tokens=self._max_tokens,
+                    system=system_prompt,
+                    messages=messages,
+                    tools=tools,
+                )
+            except anthropic.AuthenticationError as exc:
+                raise ClaudeExtractionError(
+                    f"Authentication failed — check ANTHROPIC_API_KEY: {exc}",
+                ) from exc
+            except anthropic.APITimeoutError as exc:
+                raise ClaudeExtractionError(
+                    f"API call timed out: {exc}",
+                ) from exc
+
+            total_input += response.usage.input_tokens
+            total_output += response.usage.output_tokens
+
+            # Collect tool_use blocks from this turn
+            turn_tool_calls = [
+                {"id": block.id, "name": block.name, "input": block.input}
+                for block in response.content
+                if block.type == "tool_use"
+            ]
+            all_tool_calls.extend(turn_tool_calls)
+
+            # Log each item extracted
+            for tc in turn_tool_calls:
+                inp = tc["input"]
+                logger.info(
+                    "  → %s [%s] %s",
+                    inp.get("am_card", "?"),
+                    ", ".join(inp.get("customers", [])) or "—",
+                    inp.get("title", "?")[:80],
+                )
+
+            turn_cost = compute_cost(self._model, response.usage.input_tokens, response.usage.output_tokens)
+            total_cost = compute_cost(self._model, total_input, total_output)
+            logger.info(
+                "Turn %d: %d tool call(s), stop_reason=%s, total=%d | "
+                "turn: %d in / %d out ($%.4f) | cumulative: %d in / %d out ($%.4f)",
+                turn, len(turn_tool_calls), response.stop_reason, len(all_tool_calls),
+                response.usage.input_tokens, response.usage.output_tokens, turn_cost,
+                total_input, total_output, total_cost,
             )
-        except anthropic.AuthenticationError as exc:
-            raise ClaudeExtractionError(
-                f"Authentication failed — check ANTHROPIC_API_KEY: {exc}",
-            ) from exc
-        except anthropic.APITimeoutError as exc:
-            raise ClaudeExtractionError(
-                f"API call timed out: {exc}",
-            ) from exc
 
-        # Collect all tool_use blocks
-        tool_use_blocks = [
-            {"id": block.id, "name": block.name, "input": block.input}
-            for block in response.content
-            if block.type == "tool_use"
-        ]
+            # Stop conditions
+            if response.stop_reason != "tool_use":
+                break
+            if len(all_tool_calls) >= max_items:
+                logger.warning("Safety cap reached (%d items), stopping loop", max_items)
+                break
 
-        if not tool_use_blocks:
+            # Send tool results back and continue
+            messages.append({"role": "assistant", "content": response.content})
+            messages.append({
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "tool_use_id": tc["id"], "content": "saved"}
+                    for tc in turn_tool_calls
+                ],
+            })
+
+        if not all_tool_calls:
             raise ClaudeExtractionError(
                 "Claude returned no tool calls",
                 stop_reason=response.stop_reason,
                 raw_response=response,
             )
 
-        # Token usage + cost
-        cost = compute_cost(self._model, response.usage.input_tokens, response.usage.output_tokens)
+        cost = compute_cost(self._model, total_input, total_output)
         usage_info = {
-            "input_tokens": response.usage.input_tokens,
-            "output_tokens": response.usage.output_tokens,
+            "input_tokens": total_input,
+            "output_tokens": total_output,
             "model": self._model,
             "cost_usd": round(cost, 4),
         }
 
         logger.info(
             "Extraction complete: %d item(s), %d input tokens, %d output tokens → $%.4f (%s)",
-            len(tool_use_blocks),
-            response.usage.input_tokens,
-            response.usage.output_tokens,
-            cost,
-            self._model,
+            len(all_tool_calls), total_input, total_output, cost, self._model,
         )
 
-        return tool_use_blocks, response.stop_reason, usage_info
+        return all_tool_calls, response.stop_reason, usage_info
