@@ -713,16 +713,34 @@ Unit 4.5 splits into 5 blocks. Blocks 1, 2, 3 are independent and can run in par
 - **Guard:** `--json` + `--mode claude` rejected as incompatible
 - **No automated tests** — prototype script, tested by eyeballing DOCX output. Existing 234 backend tests still pass.
 
-#### Live test results (2026-04-13, 8.0.18.1 - Release Notes.pdf, 35 pages)
+#### Live test run 1 (2026-04-13, before cache fix)
 - **Agentic loop with `tool_choice: auto`** — Claude calls `save_release_note_item` once per turn, loop sends `tool_result: "saved"` back, continues until `stop_reason: end_turn`
 - **13 items extracted** across 3 sections (New Features, Defect Fixes, Not Tested), 151 body blocks, all AM cards correct
 - **14 API turns** (13 tool calls + 1 end_turn), **650k input tokens**, **8.7k output tokens** → **$3.47 total**
-- **Prompt caching working:** Turn 1 = 41k uncached (cache write). Later turns: ~44-50k total per turn but ~60% cache reads (don't count toward rate limit). Console shows 64k cache read tokens on average.
-- **Rate limit (Tier 1, 30k input/min):** hit on most turns, SDK retries 2x then our code reads `retry-after` header and waits. Waits ranged 64-182s. Total wall time ~23 minutes.
-- **Connection error handling:** SSL drops caught and retried with 10s wait (happened once in earlier run, fixed).
-- **Cost tracking persisted:** `ExtractionUsage` on `ReleaseNoteRecord` with input_tokens, output_tokens, model, cost_usd
+- **Cache breakpoint was on the PDF block only** — images + manifest (most of the payload) were uncached. Each turn sent ~40-50k uncached tokens.
+- **Rate limit (Tier 1, 30k input/min):** hit on most turns, waits ranged 64-182s. Total wall time ~23 minutes.
+
+#### Live test run 2 (2026-04-13, after cache fix)
+- **Cache breakpoint moved to manifest text block** (last static block) — now PDF + all 55 images + manifest are cached as a prefix. Also added top-level `cache_control` on `messages.create()` for auto-advancing cache.
+- **Same 13 items, identical AM cards, sections, titles, customers.**
+- **14 API turns**, **16 uncached input tokens total** (!) + **1.4M cache reads** + **115k cache writes** + **8.8k output** → **$0.22 total**
+- Turn 1: `uncached=3, cache_write=106175` (cache written). Turns 2-13: `uncached=1, cache_read=~106-114k` per turn. Cache working perfectly.
+- **Rate limit:** only one wait (182s after turn 1). Turns 2-13 completed with no rate limit issues — uncached tokens per turn dropped from ~40k to 1.
+- **Wall time:** ~8 minutes (vs 23 minutes before).
+- **Cost reduction: $3.47 → $0.22 (94% cheaper).**
+
+#### Comparison between run 1 and run 2
+- Core structured data identical: AM cards, sections, customers, titles, paragraph text, list items, image IDs
+- ~80 differences in image `describes` fields (minor alt-text wording variance — expected from two independent LLM generations)
+- 13 differences in `summary` fields (same meaning, different phrasing)
+- 3 items (AM2904, AM2962, AM2988) have different body block counts — Claude split or merged blocks differently between runs. Some image blocks were in different order or extra images included in one run vs the other.
+- **TODO: add `temperature: 0`** to `messages.create()` to reduce non-determinism in block ordering and image assignment between runs.
+
+#### Other findings
+- **Connection error handling:** SSL drops (`SSLV3_ALERT_BAD_RECORD_MAC`) caught as `APIConnectionError` and retried with 10s wait.
+- **Cost tracking persisted:** `ExtractionUsage` on `ReleaseNoteRecord` with input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, model, cost_usd
 - **Output files:** `8.0.18.1_claude.docx` (6.2MB with embedded images) + `8.0.18.1_claude.json` (full record for inspection)
-- **Next optimization session:** reduce cost by (a) upgrading to Tier 2 ($5 deposit → 80k input/min, eliminates rate limit waits), (b) reducing input tokens (drop standalone image blocks, send PDF only), (c) try Sonnet 4.6 for quality comparison
+- **Next optimization session:** (a) add `temperature: 0` for consistent output, (b) upgrade to Tier 2 ($5 deposit → 80k input/min, eliminates rate limit waits), (c) consider reducing input tokens by dropping standalone image blocks
 
 ### Block 5 — Orchestrator integration
 - Add `record_extracted_at` and `record_extractor_version` fields to `ReleaseNotesState` in `backend/app/state/models.py`
