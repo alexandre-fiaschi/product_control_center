@@ -16,6 +16,21 @@ from app.config import Settings
 
 logger = logging.getLogger("claude.client")
 
+# Pricing per 1M tokens (USD) — https://platform.claude.com/docs/en/about-claude/pricing
+MODEL_PRICING: dict[str, dict[str, float]] = {
+    "claude-opus-4-6":   {"input": 5.0, "output": 25.0},
+    "claude-sonnet-4-6": {"input": 3.0, "output": 15.0},
+}
+
+
+def compute_cost(model: str, input_tokens: int, output_tokens: int) -> float:
+    """Compute USD cost for a Claude API call. Returns 0.0 for unknown models."""
+    prices = MODEL_PRICING.get(model)
+    if not prices:
+        logger.warning("Unknown model %r for cost calculation, reporting $0", model)
+        return 0.0
+    return (input_tokens * prices["input"] + output_tokens * prices["output"]) / 1_000_000
+
 
 class ClaudeExtractionError(Exception):
     """Raised when a Claude API call fails or returns an unusable response."""
@@ -39,7 +54,7 @@ class ClaudeClient:
         self,
         api_key: str,
         *,
-        model: str = "claude-sonnet-4-5-20250514",
+        model: str = "claude-opus-4-6",
         max_tokens: int = 16384,
         timeout_s: int = 120,
     ):
@@ -58,7 +73,7 @@ class ClaudeClient:
         claude_cfg = settings.pipeline_config.get("pipeline", {}).get("claude", {})
         return cls(
             api_key=settings.ANTHROPIC_API_KEY,
-            model=claude_cfg.get("model", "claude-sonnet-4-5-20250514"),
+            model=claude_cfg.get("model", "claude-opus-4-6"),
             max_tokens=claude_cfg.get("max_tokens", 16384),
             timeout_s=claude_cfg.get("timeout_s", 120),
         )
@@ -72,11 +87,12 @@ class ClaudeClient:
         content_blocks: list[dict],
         tools: list[dict],
         system_prompt: str,
-    ) -> tuple[list[dict], str]:
+    ) -> tuple[list[dict], str, dict]:
         """Send a messages.create request and collect tool-use blocks.
 
-        Returns ``(tool_use_blocks, stop_reason)`` where each tool-use block
-        is a dict with keys ``id``, ``name``, ``input``.
+        Returns ``(tool_use_blocks, stop_reason, usage_info)`` where
+        ``usage_info`` is a dict with ``input_tokens``, ``output_tokens``,
+        ``model``, and ``cost_usd``.
 
         Raises :class:`ClaudeExtractionError` on auth failure, timeout, or
         when the response contains zero tool calls.
@@ -99,13 +115,22 @@ class ClaudeClient:
                 f"API call timed out: {exc}",
             ) from exc
 
-        # Log token usage for cost tracking
+        # Token usage + cost
         usage = response.usage
+        cost = compute_cost(self._model, usage.input_tokens, usage.output_tokens)
+        usage_info = {
+            "input_tokens": usage.input_tokens,
+            "output_tokens": usage.output_tokens,
+            "model": self._model,
+            "cost_usd": round(cost, 4),
+        }
+
         logger.info(
-            "Claude response: %d input tokens, %d output tokens, stop_reason=%s",
+            "Claude response: %d input tokens, %d output tokens → $%.4f (%s)",
             usage.input_tokens,
             usage.output_tokens,
-            response.stop_reason,
+            cost,
+            self._model,
         )
 
         # Collect all tool_use blocks
@@ -123,4 +148,4 @@ class ClaudeClient:
             )
 
         logger.info("Collected %d tool call(s)", len(tool_use_blocks))
-        return tool_use_blocks, response.stop_reason
+        return tool_use_blocks, response.stop_reason, usage_info

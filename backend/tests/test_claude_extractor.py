@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.integrations.claude.client import ClaudeClient, ClaudeExtractionError
+from app.integrations.claude.client import ClaudeClient, ClaudeExtractionError, compute_cost
 from app.integrations.claude.extractor import (
     _build_system_prompt,
     _build_tool_schema,
@@ -340,10 +340,14 @@ class TestClaudeClient:
         mock_response.usage.output_tokens = 1500
 
         with patch.object(client._client.messages, "create", return_value=mock_response):
-            blocks, stop_reason = client.send_extraction([], [], "test prompt")
+            blocks, stop_reason, usage_info = client.send_extraction([], [], "test prompt")
             assert len(blocks) == 2
             assert blocks[0]["input"]["am_card"] == "AM1000"
             assert stop_reason == "end_turn"
+            assert usage_info["input_tokens"] == 5000
+            assert usage_info["output_tokens"] == 1500
+            assert usage_info["model"] == "claude-opus-4-6"
+            assert usage_info["cost_usd"] > 0
 
     def test_send_extraction_no_tool_calls_raises(self):
         client = ClaudeClient("sk-test-key")
@@ -411,9 +415,14 @@ class TestExtractReleaseNote:
         ]
 
         mock_client = MagicMock(spec=ClaudeClient)
+        mock_usage = {
+            "input_tokens": 50000, "output_tokens": 3000,
+            "model": "claude-opus-4-6", "cost_usd": 0.325,
+        }
         mock_client.send_extraction.return_value = (
             self._make_tool_calls(tool_inputs),
             "end_turn",
+            mock_usage,
         )
 
         record = extract_release_note(
@@ -430,6 +439,9 @@ class TestExtractReleaseNote:
         assert record.items[1].am_card == "AM2904"
         assert record.source_pdf_pages == 4
         assert len(record.source_pdf_hash) == 64  # SHA-256 hex
+        assert record.usage is not None
+        assert record.usage.model == "claude-opus-4-6"
+        assert record.usage.cost_usd == 0.325
 
     def test_max_tokens_logs_warning(self, pdf_workspace, mock_manifest, caplog):
         tool_inputs = [
@@ -447,6 +459,7 @@ class TestExtractReleaseNote:
         mock_client.send_extraction.return_value = (
             self._make_tool_calls(tool_inputs),
             "max_tokens",
+            {"input_tokens": 1000, "output_tokens": 500, "model": "claude-opus-4-6", "cost_usd": 0.02},
         )
 
         import logging
@@ -476,6 +489,7 @@ class TestExtractReleaseNote:
         mock_client.send_extraction.return_value = (
             self._make_tool_calls(tool_inputs),
             "end_turn",
+            {"input_tokens": 1000, "output_tokens": 500, "model": "claude-opus-4-6", "cost_usd": 0.02},
         )
 
         with pytest.raises(ClaudeExtractionError, match="no valid items"):
@@ -517,6 +531,7 @@ class TestExtractReleaseNote:
         mock_client.send_extraction.return_value = (
             self._make_tool_calls(tool_inputs),
             "end_turn",
+            {"input_tokens": 1000, "output_tokens": 500, "model": "claude-opus-4-6", "cost_usd": 0.02},
         )
 
         record = extract_release_note(
@@ -539,3 +554,22 @@ class TestExtractReleaseNote:
                 version="8.0.18.1",
                 claude_client=mock_client,
             )
+
+
+# ───── TestComputeCost ───────────────────────────────────────────────────
+
+
+class TestComputeCost:
+    def test_opus_46_cost(self):
+        # 100k input × $5/MTok + 10k output × $25/MTok = $0.50 + $0.25 = $0.75
+        cost = compute_cost("claude-opus-4-6", 100_000, 10_000)
+        assert cost == pytest.approx(0.75)
+
+    def test_sonnet_46_cost(self):
+        # 100k input × $3/MTok + 10k output × $15/MTok = $0.30 + $0.15 = $0.45
+        cost = compute_cost("claude-sonnet-4-6", 100_000, 10_000)
+        assert cost == pytest.approx(0.45)
+
+    def test_unknown_model_returns_zero(self):
+        cost = compute_cost("unknown-model", 100_000, 10_000)
+        assert cost == 0.0

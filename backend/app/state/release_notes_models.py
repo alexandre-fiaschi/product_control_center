@@ -61,6 +61,13 @@ class ReleaseNoteItem(BaseModel):
     body: list[BodyBlock] = Field(default_factory=list)
 
 
+class ExtractionUsage(BaseModel):
+    input_tokens: int
+    output_tokens: int
+    model: str
+    cost_usd: float
+
+
 class ReleaseNoteRecord(BaseModel):
     version: str
     extracted_at: datetime
@@ -69,6 +76,7 @@ class ReleaseNoteRecord(BaseModel):
     source_pdf_path: str
     source_pdf_hash: str
     source_pdf_pages: int
+    usage: ExtractionUsage | None = None
     items: list[ReleaseNoteItem] = Field(default_factory=list)
 
 

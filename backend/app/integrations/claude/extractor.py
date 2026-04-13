@@ -19,6 +19,7 @@ from app.integrations.claude.client import ClaudeClient, ClaudeExtractionError
 from app.integrations.pdf.image_extractor import ImageManifest
 from app.state.release_notes_models import (
     CodeBlock,
+    ExtractionUsage,
     HeadingBlock,
     ImageBlock,
     ListBlock,
@@ -84,7 +85,7 @@ def extract_release_note(
 
     logger.info("Extracting release note for %s from %s", version, pdf_path.name)
 
-    tool_calls, stop_reason = claude_client.send_extraction(
+    tool_calls, stop_reason, usage_info = claude_client.send_extraction(
         content_blocks, [tool_def], system_prompt,
     )
 
@@ -123,6 +124,7 @@ def extract_release_note(
         source_pdf_path=str(pdf_path),
         source_pdf_hash=pdf_hash,
         source_pdf_pages=manifest.source_pdf_pages,
+        usage=ExtractionUsage(**usage_info),
         items=items,
     )
 
