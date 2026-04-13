@@ -151,7 +151,6 @@ def _build_user_message(
             "media_type": "application/pdf",
             "data": base64.standard_b64encode(pdf_bytes).decode("ascii"),
         },
-        "cache_control": {"type": "ephemeral"},
     })
 
     # 2. Non-chrome image blocks
@@ -188,7 +187,11 @@ def _build_user_message(
         "the image blocks above and use the exact ID. Never invent IDs. "
         "Never reference an image that isn't in this list."
     )
-    blocks.append({"type": "text", "text": "\n".join(manifest_lines)})
+    blocks.append({
+        "type": "text",
+        "text": "\n".join(manifest_lines),
+        "cache_control": {"type": "ephemeral"},
+    })
 
     logger.debug(
         "Built user message: 1 PDF + %d image blocks + manifest text",

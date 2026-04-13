@@ -144,9 +144,10 @@ class TestBuildUserMessage:
         assert blocks[0]["type"] == "document"
         assert blocks[0]["source"]["media_type"] == "application/pdf"
 
-    def test_pdf_block_has_cache_control(self, pdf_workspace, mock_manifest):
+    def test_manifest_text_has_cache_control(self, pdf_workspace, mock_manifest):
         blocks = _build_user_message(pdf_workspace, pdf_workspace.read_bytes(), mock_manifest)
-        assert blocks[0]["cache_control"] == {"type": "ephemeral"}
+        text_blocks = [b for b in blocks if b["type"] == "text"]
+        assert text_blocks[-1]["cache_control"] == {"type": "ephemeral"}
 
     def test_includes_non_chrome_images_only(self, pdf_workspace, mock_manifest):
         blocks = _build_user_message(pdf_workspace, pdf_workspace.read_bytes(), mock_manifest)

@@ -111,6 +111,37 @@ class ClaudeClient:
 
         while True:
             turn += 1
+
+            # Log what we're sending this turn
+            if logger.isEnabledFor(logging.DEBUG):
+                for i, msg in enumerate(messages):
+                    role = msg["role"]
+                    content = msg["content"]
+                    if isinstance(content, list):
+                        block_summary = []
+                        for b in content:
+                            if isinstance(b, dict):
+                                btype = b.get("type", "?")
+                                if btype == "document":
+                                    data_len = len(b.get("source", {}).get("data", ""))
+                                    block_summary.append(f"document({data_len} b64 chars)")
+                                elif btype == "image":
+                                    data_len = len(b.get("source", {}).get("data", ""))
+                                    block_summary.append(f"image({data_len} b64 chars)")
+                                elif btype == "text":
+                                    block_summary.append(f"text({len(b.get('text', ''))} chars)")
+                                elif btype == "tool_use":
+                                    block_summary.append(f"tool_use({b.get('name', '?')})")
+                                elif btype == "tool_result":
+                                    block_summary.append(f"tool_result({b.get('tool_use_id', '?')[:8]})")
+                                else:
+                                    block_summary.append(btype)
+                            else:
+                                block_summary.append(f"{getattr(b, 'type', '?')}")
+                        logger.debug("  msg[%d] %s: %s", i, role, ", ".join(block_summary))
+                    else:
+                        logger.debug("  msg[%d] %s: text(%d chars)", i, role, len(str(content)))
+
             try:
                 response = self._client.messages.create(
                     model=self._model,
@@ -118,6 +149,7 @@ class ClaudeClient:
                     system=system_prompt,
                     messages=messages,
                     tools=tools,
+                    cache_control={"type": "ephemeral"},
                 )
             except (anthropic.RateLimitError, anthropic.APIConnectionError) as exc:
                 if isinstance(exc, anthropic.RateLimitError):
@@ -134,6 +166,7 @@ class ClaudeClient:
                     system=system_prompt,
                     messages=messages,
                     tools=tools,
+                    cache_control={"type": "ephemeral"},
                 )
             except anthropic.AuthenticationError as exc:
                 raise ClaudeExtractionError(
