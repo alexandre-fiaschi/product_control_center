@@ -88,11 +88,13 @@ class ClaudeClient:
         tools: list[dict],
         system_prompt: str,
     ) -> tuple[list[dict], str, dict]:
-        """Send a messages.create request and collect tool-use blocks.
+        """Send a single request and collect all tool-use blocks.
 
-        Returns ``(tool_use_blocks, stop_reason, usage_info)`` where
-        ``usage_info`` is a dict with ``input_tokens``, ``output_tokens``,
-        ``model``, and ``cost_usd``.
+        Claude can return multiple tool calls in one response. We use
+        ``tool_choice: auto`` so Claude calls the tool as many times as
+        needed and then stops with ``end_turn``.
+
+        Returns ``(tool_use_blocks, stop_reason, usage_info)``.
 
         Raises :class:`ClaudeExtractionError` on auth failure, timeout, or
         when the response contains zero tool calls.
@@ -104,7 +106,6 @@ class ClaudeClient:
                 system=system_prompt,
                 messages=[{"role": "user", "content": content_blocks}],
                 tools=tools,
-                tool_choice={"type": "any"},
             )
         except anthropic.AuthenticationError as exc:
             raise ClaudeExtractionError(
@@ -114,24 +115,6 @@ class ClaudeClient:
             raise ClaudeExtractionError(
                 f"API call timed out: {exc}",
             ) from exc
-
-        # Token usage + cost
-        usage = response.usage
-        cost = compute_cost(self._model, usage.input_tokens, usage.output_tokens)
-        usage_info = {
-            "input_tokens": usage.input_tokens,
-            "output_tokens": usage.output_tokens,
-            "model": self._model,
-            "cost_usd": round(cost, 4),
-        }
-
-        logger.info(
-            "Claude response: %d input tokens, %d output tokens → $%.4f (%s)",
-            usage.input_tokens,
-            usage.output_tokens,
-            cost,
-            self._model,
-        )
 
         # Collect all tool_use blocks
         tool_use_blocks = [
@@ -147,5 +130,22 @@ class ClaudeClient:
                 raw_response=response,
             )
 
-        logger.info("Collected %d tool call(s)", len(tool_use_blocks))
+        # Token usage + cost
+        cost = compute_cost(self._model, response.usage.input_tokens, response.usage.output_tokens)
+        usage_info = {
+            "input_tokens": response.usage.input_tokens,
+            "output_tokens": response.usage.output_tokens,
+            "model": self._model,
+            "cost_usd": round(cost, 4),
+        }
+
+        logger.info(
+            "Extraction complete: %d item(s), %d input tokens, %d output tokens → $%.4f (%s)",
+            len(tool_use_blocks),
+            response.usage.input_tokens,
+            response.usage.output_tokens,
+            cost,
+            self._model,
+        )
+
         return tool_use_blocks, response.stop_reason, usage_info

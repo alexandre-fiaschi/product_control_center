@@ -224,10 +224,15 @@ logger = logging.getLogger("scripts.docx_conversion")
 
 def setup_logging(verbose: bool) -> None:
     logging.basicConfig(
-        level=logging.DEBUG if verbose else logging.INFO,
+        level=logging.INFO,
         format="[%(asctime)s] [%(levelname)s] %(message)s",
         datefmt="%H:%M:%S",
     )
+    # --verbose only enables DEBUG for our own loggers, not third-party libs
+    if verbose:
+        for name in ("scripts.docx_conversion", "claude.client", "claude.extractor",
+                      "pdf.image_extractor"):
+            logging.getLogger(name).setLevel(logging.DEBUG)
 
 
 # ─────────────────────────── extraction ───────────────────────────
@@ -1103,6 +1108,16 @@ def convert(
         "convert.success pdf=%s output=%s size=%d",
         pdf_path.name, rel, saved.stat().st_size,
     )
+
+    # Claude mode: save the full record JSON next to the DOCX for inspection.
+    if mode == "claude":
+        record_path = output_path.with_suffix(".json")
+        record_path.write_text(record.model_dump_json(indent=2))
+        try:
+            rec_rel = record_path.resolve().relative_to(PROJECT_ROOT)
+        except ValueError:
+            rec_rel = record_path.resolve()
+        logger.info("convert.record.saved path=%s", rec_rel)
 
     # Drop the extractor's Markdown next to the DOCX (fast/hybrid only —
     # claude mode doesn't produce an opendataloader markdown).
