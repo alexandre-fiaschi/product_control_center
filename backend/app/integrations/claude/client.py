@@ -105,6 +105,8 @@ class ClaudeClient:
         all_tool_calls: list[dict] = []
         total_input = 0
         total_output = 0
+        total_cache_read = 0
+        total_cache_write = 0
         turn = 0
 
         while True:
@@ -142,8 +144,16 @@ class ClaudeClient:
                     f"API call timed out: {exc}",
                 ) from exc
 
-            total_input += response.usage.input_tokens
-            total_output += response.usage.output_tokens
+            # Detailed usage from this turn
+            u = response.usage
+            cache_read = getattr(u, "cache_read_input_tokens", 0) or 0
+            cache_write = getattr(u, "cache_creation_input_tokens", 0) or 0
+            uncached = u.input_tokens  # tokens NOT from cache
+
+            total_input += u.input_tokens
+            total_output += u.output_tokens
+            total_cache_read += cache_read
+            total_cache_write += cache_write
 
             # Collect tool_use blocks from this turn
             turn_tool_calls = [
@@ -163,13 +173,16 @@ class ClaudeClient:
                     inp.get("title", "?")[:80],
                 )
 
-            turn_cost = compute_cost(self._model, response.usage.input_tokens, response.usage.output_tokens)
+            # Log how many messages we're sending
+            n_messages = len(messages)
             total_cost = compute_cost(self._model, total_input, total_output)
             logger.info(
-                "Turn %d: %d tool call(s), stop_reason=%s, total=%d | "
-                "turn: %d in / %d out ($%.4f) | cumulative: %d in / %d out ($%.4f)",
+                "Turn %d: %d tool call(s), stop_reason=%s, total_items=%d | "
+                "uncached=%d, cache_read=%d, cache_write=%d, out=%d | "
+                "messages=%d | cumulative: %d in / %d out ($%.4f)",
                 turn, len(turn_tool_calls), response.stop_reason, len(all_tool_calls),
-                response.usage.input_tokens, response.usage.output_tokens, turn_cost,
+                uncached, cache_read, cache_write, u.output_tokens,
+                n_messages,
                 total_input, total_output, total_cost,
             )
 
@@ -201,13 +214,16 @@ class ClaudeClient:
         usage_info = {
             "input_tokens": total_input,
             "output_tokens": total_output,
+            "cache_read_tokens": total_cache_read,
+            "cache_write_tokens": total_cache_write,
             "model": self._model,
             "cost_usd": round(cost, 4),
         }
 
         logger.info(
-            "Extraction complete: %d item(s), %d input tokens, %d output tokens → $%.4f (%s)",
-            len(all_tool_calls), total_input, total_output, cost, self._model,
+            "Extraction complete: %d item(s), %d in (%d cached_read, %d cached_write) / %d out → $%.4f (%s)",
+            len(all_tool_calls), total_input, total_cache_read, total_cache_write,
+            total_output, cost, self._model,
         )
 
         return all_tool_calls, response.stop_reason, usage_info
