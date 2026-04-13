@@ -684,16 +684,18 @@ Unit 4.5 splits into 5 blocks. Blocks 1, 2, 3 are independent and can run in par
 - `backend/app/state/release_notes_store.py` — `load_release_notes`, `save_release_notes`, `get_record`, `upsert_record`. Mirrors `state/manager.py`, atomic writes
 - Pure data layer, unit tests
 
-### Block 3 — Claude extractor
-- `backend/app/integrations/claude/__init__.py`
-- `backend/app/integrations/claude/client.py` — Anthropic SDK wrapper, auth, retries, timeouts
-- `backend/app/integrations/claude/extractor.py` — `extract_release_note(pdf_path, manifest) → ReleaseNoteRecord`
-  - Builds the tool-use schema for `save_release_note_item` (covers all 8 body block types)
-  - Builds the prompt with the rules for sections, AM codes, customer codes, image IDs, list/table grouping, callouts, code blocks
-  - Sends PDF as document content + manifest text as user message
-  - Collects tool calls, validates each (regex on `am_card`, `image_id` exists in manifest, etc.)
-  - Returns a `ReleaseNoteRecord`. **Pure function — does not save anywhere.**
-- Tested with a recorded fixture response (no live API in CI). Live API smoke test is manual.
+### Block 3 — Claude extractor ✅ DONE (2026-04-13)
+- New package: `backend/app/integrations/claude/`
+- `client.py` — `ClaudeClient` wraps `anthropic.Anthropic`. `ClaudeExtractionError` custom exception. `from_settings()` classmethod reads `ANTHROPIC_API_KEY` env var + `pipeline.claude` config. `send_extraction()` calls Messages API with `tool_choice: {"type": "any"}`, collects tool_use blocks, logs token usage. Re-raises auth/timeout errors. SDK handles 429/5xx retries internally.
+- `extractor.py` — `extract_release_note(pdf_path, manifest, *, version, claude_client) → ReleaseNoteRecord`
+  - Builds user message: PDF as document block (with prompt caching) + non-chrome images as separate image blocks + manifest text listing valid IDs with page/dimensions
+  - Builds tool schema for `save_release_note_item` — flat body-block schema with 6 types (paragraph, heading, image, list, table, code). `additionalProperties: true` on body items — Claude handles flat schemas better than nested `oneOf`. Per-type fields validated post-hoc.
+  - Builds system prompt with extraction rules: walk document top-to-bottom, section names verbatim, strip AM card + customer codes from title, image IDs from manifest only, skip page chrome
+  - Collects tool calls, validates each via `_validate_item()` (am_card regex, image_id exists in manifest non-chrome set, block type dispatch). Invalid items skipped with WARNING, invalid body blocks skipped individually.
+  - Returns `ReleaseNoteRecord`. **Pure function — does not save anywhere.**
+- **Image mapping approach:** images sent twice (in PDF + as standalone PNGs) so Claude can visually match screenshots to manifest IDs. Alternative considered: PDF-only + positional hints — deferred, current approach is most reliable and cost is negligible at 2-3 releases/month (~$1-2/extraction on Opus).
+- Config: added `ANTHROPIC_API_KEY` to Settings, `claude` section to `pipeline.json` (model: `claude-sonnet-4-5-20250514`, 16384 max_tokens, 120s timeout), `anthropic` to requirements.txt
+- Tested: 31 tests — schema shape, user message construction (PDF block + chrome filtering + manifest text), system prompt content, item validation (happy path, bad am_card, unknown image_id, invalid format, unknown block type, heading level default, empty body, missing customers), client errors (empty key, auth failure, no tool calls), full extract flow (happy path, max_tokens warning, all-invalid raises, partial failure skips, API error propagation). All mocked — no live API in CI.
 
 ### Block 4 — Wire into `test_docx_conversion.py`
 - New `--mode claude` branch in the script

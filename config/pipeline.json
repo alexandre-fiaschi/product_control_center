@@ -38,6 +38,12 @@
         "flow": "not_started -> discovered -> downloaded -> converted -> pending_approval -> approved -> pdf_exported -> published"
       }
     },
+    "claude": {
+      "model": "claude-sonnet-4-5-20250514",
+      "extractor_version": 1,
+      "max_tokens": 16384,
+      "timeout_s": 120
+    },
     "jira": {
       "enabled": false,
       "base_url": "https://caeglobal.atlassian.net",

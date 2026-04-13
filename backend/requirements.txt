@@ -7,4 +7,5 @@ curl_cffi
 beautifulsoup4
 pdfplumber
 Pillow
+anthropic
 pytest

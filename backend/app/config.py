@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     JIRA_API_TOKEN_NO_SCOPES: str = ""
     JIRA_PROJECT_KEY: str = ""
 
+    # Claude (release-notes extraction — see PLAN_CLAUDE_EXTRACTION.md)
+    ANTHROPIC_API_KEY: str = ""
+
     # Zendesk (release-notes scraper — see PLAN_DOCS_PIPELINE.md unit 3)
     ZENDESK_SUBDOMAIN: str = ""
     ZENDESK_EMAIL: str = ""
