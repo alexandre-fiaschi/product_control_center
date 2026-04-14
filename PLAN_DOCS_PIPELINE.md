@@ -592,23 +592,32 @@ Unit 4 (Block B prototype) is the only one that runs **in parallel** with the re
 **Effort:** Medium–Large.
 **Depends on:** units 7 + 8.
 
-**Scope.** New component for the PDF + DOCX side-by-side review view. Triggered when "Approve Docs" is clicked on a `pending_approval` release-notes cell. This view is a **gate in front of** the existing `JiraApprovalModal`, not a replacement for it.
+**Scope.** Review view with two main panels and a toggleable record editor. Triggered when "Approve Docs" is clicked on a `pending_approval` release-notes cell. This view is a **gate in front of** the existing `JiraApprovalModal`, not a replacement for it.
+
+**Two review modes:**
+
+- **Visual comparison** (default) — PDF original on left, DOCX preview on right. The DOCX preview is rendered as PDF on the backend (via `libreoffice --headless`) so both panels show consistent PDF rendering. Quick check that content and layout look right.
+- **Content editing** (toggle when needed) — opens the extracted record (items, body blocks, images) as editable fields. Fix missing text, wrong images, reorder blocks. Save → re-render DOCX → preview updates.
+
+**Styling/formatting fixes:** "Open in Word" button links to the local `.docx` file path. Since the app runs locally, this opens directly in Microsoft Word for template-level styling tweaks (indent, font size, image width). Styling fixes go into the template or `render_record()` code once — not per-release manual edits.
 
 Flow:
 1. Click "Approve Docs" → `DocsReviewView` opens.
 2. PDF on the left (pdf.js or `<embed>`, served by unit 7's endpoint).
-3. DOCX on the right: since the backend runs on Alex's own machine, the DOCX already exists at a local path. Show the **local file path as copyable text** plus a "Reveal in Finder" affordance (`file://` link or a small backend endpoint that shells `open -R <path>` on macOS). **No download button** — he opens the file directly in Word to tweak it if needed. The unit 7 `draft.docx` endpoint stays available for future remote-backend scenarios and a v2 HTML preview, but is not the primary interaction in v1.
-4. "Looks good, continue" button → closes the review view and opens the existing `JiraApprovalModal`, pre-filled for the docs ticket. No new Jira UI — reuse what binaries already uses.
-5. Jira modal approve → normal approve endpoint → Unit 10's `approved → pdf_exported → published` flow kicks in on the backend.
+3. DOCX preview on the right (rendered as PDF by the backend). Plus "Open in Word" button for the local file path.
+4. If content needs fixing → toggle the record editor, edit, save, DOCX re-renders.
+5. "Looks good, continue" button → closes the review view and opens the existing `JiraApprovalModal`, pre-filled for the docs ticket. No new Jira UI — reuse what binaries already uses.
+6. Jira modal approve → normal approve endpoint → Unit 10's `approved → pdf_exported → published` flow kicks in on the backend.
 
 The review view itself does **not** advance workflow status — `pending_approval → approved` still happens through the Jira modal + approve endpoint, same pattern as binaries.
 
 **Files:**
-- `frontend/src/components/patches/DocsReviewView.tsx` (new) — side-by-side component. Takes a patch, uses unit 7's PDF endpoint for the left pane, shows `release_notes.generated_docx_path` on the right with a reveal-in-finder action. Emits a "continue" callback; the parent (Pipeline.tsx) then opens `JiraApprovalModal`.
+- `frontend/src/components/patches/DocsReviewView.tsx` (new) — two-panel viewer (PDF left, DOCX-as-PDF right) + toggleable record editor. "Open in Word" button for local file access. Emits a "continue" callback; the parent (Pipeline.tsx) then opens `JiraApprovalModal`.
 - [frontend/src/views/Pipeline.tsx](frontend/src/views/Pipeline.tsx) — chain the existing "Approve Docs" path: open `DocsReviewView` first, then on continue open the existing `JiraApprovalModal`. Binaries "Approve" path is untouched.
-- *(optional, if `file://` links prove unreliable in the browser)* `backend/app/api/patches.py` — add `POST /patches/{id}/release-notes/reveal` that runs `subprocess.run(["open", "-R", path])`. macOS-only, dev convenience, fine to skip if a plain `file://` link works.
+- `backend/app/api/patches.py` — add `POST /patches/{id}/release-notes/render` endpoint that re-renders DOCX from the record and converts to PDF preview via `libreoffice --headless`.
+- *(optional, if `file://` links prove unreliable in the browser)* `backend/app/api/patches.py` — add `POST /patches/{id}/release-notes/reveal` that runs `subprocess.run(["open", "-R", path])`. macOS-only, dev convenience.
 
-**Tests.** `npm run build` clean. Manual smoke test: open the review view on a real `pending_approval` patch, see the PDF render, click the path to reveal the DOCX in Finder, open/edit in Word, click continue, see the Jira modal appear pre-filled, approve, confirm state advances through `approved → pdf_exported → published`.
+**Tests.** `npm run build` clean. Manual smoke test: open the review view on a real `pending_approval` patch, see the PDF render on both sides, toggle record editor, edit a field, see DOCX preview update, click "Open in Word" to verify local file access, click continue, see the Jira modal appear pre-filled, approve, confirm state advances through `approved → pdf_exported → published`.
 
 **Done criteria:** end-to-end docs review workflow works against real Zendesk-fetched release notes.
 
