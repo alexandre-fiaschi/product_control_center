@@ -27,6 +27,19 @@ cd backend && uvicorn app.main:app                    # serves everything on :80
 cd backend && pytest tests/ -v -k "not integration"
 ```
 
+## Dev Mode vs Prod Mode
+
+External services are gated by `enabled` flags in `config/pipeline.json`. In dev mode, all flags are `false` — no real API calls are made. Flip to `true` when ready for production.
+
+| Service | Config flag | Dev mode (false) | Prod mode (true) |
+|---------|------------|------------------|-------------------|
+| **Jira** | `jira.enabled` | No ticket creation | Creates real Jira tickets |
+| **Zendesk** | `docs.enabled` | No PDF fetching | Fetches PDFs from Zendesk |
+| **Claude** | `claude.enabled` | Orchestrator skips extraction. Script `--mode claude` still works (uses local cache or `--no-cache` for a real call). | Orchestrator calls Claude API during scans |
+| **SFTP** | *(always on when credentials are in `.env`)* | Scans real SFTP | Same |
+
+Cached extraction results (`.cache/claude/<hash>.json`) act as mock data in dev mode — the script reuses them without API calls. Only `--no-cache` triggers a real Claude call.
+
 ## Project Structure
 
 ```
