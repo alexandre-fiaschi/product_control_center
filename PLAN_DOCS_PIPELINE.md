@@ -665,6 +665,20 @@ The review view itself does **not** advance workflow status — `pending_approva
 
 ---
 
+### Future ideas — extraction quality gates
+
+Three ideas borrowed from a colleague's agentic PDF parsing pipeline (RAG-focused), worth stealing for our review workflow:
+
+1. **Untagged-content bucket.** Add `untagged_content: list[str]` to `ReleaseNoteRecord`. After extraction, run Tesseract (or pdfplumber's text layer) over the PDF, diff OCR tokens against everything Claude placed in section/heading/paragraph/list/table/code blocks, and drop the leftover runs into the bucket — grouped by page. Nothing is ever silently dropped: the Unit 9 review view surfaces exactly what Claude skipped so a reviewer can place it or confirm it's chrome. Watch out for false positives from text inside screenshots (system prompt says don't transcribe them) — subtract image-bbox tokens from the OCR ground truth first using the existing `collect_image_bboxes` logic.
+
+2. **Coverage-ratio gate.** Compute `|claude_tokens ∩ ocr_tokens| / |ocr_tokens|` (after image-bbox subtraction) and fail the extract pass if below a threshold (his article uses 0.95). Gives us a regression signal when a new release-notes layout lands and Claude starts leaking chrome into body text — today we'd only notice by eye.
+
+3. **Retry loop with feedback.** If the coverage gate fails, re-run the extraction with the untagged fragments injected as a hint in the system message ("previous run missed these fragments, place them"). Cap at 3 attempts via a config key. With prompt caching on the PDF + schema + system prompt, each retry costs ~$0.22, so the safety net is near-free.
+
+Implementation order: (1) first — high value, cheap, no retry plumbing. (2) second — needs (1). (3) last — only if production shows failures that retries actually fix.
+
+---
+
 ### Block-to-unit mapping (for cross-reference)
 
 | Block in §2 | Units in §7 |
