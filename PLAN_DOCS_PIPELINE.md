@@ -464,11 +464,11 @@ Unit 4 (Block B prototype) is the only one that runs **in parallel** with the re
 
 ---
 
-### Unit 4 — Block B prototype (standalone, parallel) — GATE BEFORE UNIT 5
+### Unit 4 — Block B prototype (standalone, parallel) — GATE BEFORE UNIT 5 ✅ GO (2026-04-14)
 
 **Effort:** Small–Medium.
 **Depends on:** nothing — runs in parallel with units 0–3.
-**Status:** In progress — first iteration shipped, fidelity still below acceptable workflow. Verdict deferred until additional iterations.
+**Status:** ✅ **Verdict: GO on the Claude path (Unit 4.5).** The fast/hybrid backends were ruled out (fast reorders content past images; hybrid OCRs every screenshot and emits page chrome as body paragraphs). Unit 4.5 added a Claude-based extractor that produces clean structured records with correct image ordering and no page-chrome noise. With prompt caching wired correctly (commit `e0af8e6`), re-extracting the same PDF costs $0.22 down from $3.47 fresh. Unit 5 lifted the Claude-mode rendering helpers from the standalone script into the production pipeline.
 
 **Scope.** Standalone PDF → CAE-templated DOCX prototype. **Not wired into the pipeline.** Goal is to answer: *is the conversion fidelity good enough to ship?* If yes, unit 5 wires it in. If no, the docs pipeline becomes a "human edits the DOCX in Word" loop and the rest of the plan changes shape.
 
@@ -504,24 +504,45 @@ Unit 4 (Block B prototype) is the only one that runs **in parallel** with the re
 
 ---
 
-### Unit 5 — Block B integrated
+### Unit 5 — Block B integrated ✅ DONE (2026-04-15)
 
 **Effort:** Medium.
-**Depends on:** units 3 + 4 (and 4 was a "go").
+**Depends on:** units 3 + 4 (and 4 was a "go" on the Claude path — Unit 4.5).
 
-**Scope.** Move the prototype from unit 4 into `backend/app/pipelines/docs/converter.py`. Plug into the orchestrator after the docs fetcher, so the workflow status flows `downloaded → converted` automatically. Re-conversion is idempotent: re-running on a `converted` or `pending_approval` cell overwrites the DOCX without re-downloading the source PDF.
+**Scope as built.** Lift the Claude-mode parts of `scripts/test_docx_conversion.py` into `backend/app/pipelines/docs/converter.py` as **two public functions** (not one), wire them into the orchestrator as **two new sequential passes**, and clean up one pre-existing sub-step smell in the workflow status machine while we're at it.
 
-**Files:**
-- `backend/app/pipelines/docs/converter.py` (new) — `convert_to_docx(source_pdf_path, template_path, output_path)`. Wraps the prototype logic in the lifecycle helper (`step_name="convert"`).
-- [backend/app/services/orchestrator.py](backend/app/services/orchestrator.py) — call the converter after fetcher succeeds.
-- `backend/app/state/models.py` — add `source_pdf_path` and `generated_docx_path` fields on `ReleaseNotesState` (mentioned in §2 Block A/B but not yet on the model).
+**Why two stages, not one.** Extract (cache lookup + Claude API) and render (template + python-docx) have totally different failure-mode universes — extract is slow/networked/expensive, render is fast/local/free. Standard production-ETL pattern (Airflow tasks, Dagster ops, Prefect tasks, dbt nodes, Temporal activities) is discrete stages with their own state, their own retry semantics, and their own failure-mode counters. Splitting them gives clean per-stage logs and lets a render-only retry cost zero API dollars (cache hit on the extract pass).
 
-**Tests.**
-- Unit: converter produces a DOCX file from a fixture PDF.
-- Integration: full orchestrator pass takes a patch from `not_started` → `discovered` → `downloaded` → `converted` against fixtures.
-- Re-conversion: running the converter twice on the same patch overwrites the DOCX.
+**Workflow status changes.**
+- **Added `extracted`** between `downloaded` and `converted`. Set by `extract_release_notes` on a successful cache hit or fresh API call.
+- **Removed `discovered`** from `ReleaseNotesState`. It was a vestigial sub-step from Unit 3 that encoded "halfway through the fetch attempt" as a workflow value — failed the four-bullet test for "is this a real workflow stage". The fetcher now sets `source_url`, `source_pdf_path`, and `status = "downloaded"` together at the success path (single transition, `not_started → downloaded`). `discovered_at` was dropped from the model; Pydantic silently ignores it on load so existing state files are forward-compatible. **Binaries kept its `discovered` state** because there it's a real first-class state set by SFTP discovery before any download attempt.
+- **Note:** `pdf_exported` (planned for Unit 10) currently fails the same four-bullet test. Don't add it when Unit 10 ships — fold it into the publish action and rely on `last_run.step` for triage.
 
-**Done criteria:** at least one real patch end-to-end in dev produces a `pending_approval` release_notes cell with both files on disk.
+**Side fields added.**
+- `extracted_at`, `record_json_path`, `generated_docx_path` on `ReleaseNotesState` (workflow stage timestamps + artifact paths).
+- `not_found_reason: Literal["no_match", "ambiguous_match"] | None` set by the fetcher on `ZendeskNotFound` / `ZendeskAmbiguous`. Side field, not a status split — Unit 8 reads it for differentiated UI copy without bloating the workflow `Literal`.
+
+**Files (as built):**
+- [backend/app/state/models.py](backend/app/state/models.py) — `Literal` updated, `discovered_at` dropped, four new fields added.
+- [backend/app/pipelines/docs/fetcher.py](backend/app/pipelines/docs/fetcher.py) — collapsed `not_started → discovered → downloaded` into one transition; populates `not_found_reason`.
+- [backend/app/pipelines/docs/converter.py](backend/app/pipelines/docs/converter.py) (new) — two public functions (`extract_release_notes`, `render_release_notes`) plus all the lifted template/render helpers and SHA256-keyed cache helpers (with `extractor_version` guard).
+- [backend/app/services/orchestrator.py](backend/app/services/orchestrator.py) — added `_build_claude_client()`, Pass 4 (extract) and Pass 5 (render), five new summary counters per product.
+- [backend/app/config.py](backend/app/config.py) — added `docs_template_path` and `docs_cache_dir` properties.
+- [backend/app/services/patch_service.py](backend/app/services/patch_service.py) — `RELEASE_NOTES_TRANSITIONS` updated to the new state machine.
+- **No changes to `lifecycle.py`** — the split design eliminates the need for mid-flight `step` updates that an earlier draft proposed.
+
+**`claude.enabled` semantics.** Gates **API calls only**, not the convert pass. Pass 4 always runs. Cache hit → `extracted` for free. Cache miss + `enabled=true` → real API call. Cache miss + `enabled=false` → clean skip (workflow status untouched, `last_run.state=success`, `convert.extract.skipped reason=claude_disabled` log line). Dev mode gets the full pipeline including DOCX rendering on cached patches without paying anything.
+
+**`extract_release_notes` returns a literal**: `"extracted"` on success, `"skipped_no_api"` on cache miss + disabled. The orchestrator captures it via a `result_holder = {"value": None}` closure through `run_cell` and uses it to count `notes_extract_skipped` separately from `notes_extracted`. `render_release_notes` returns `None` — every `extracted` patch is renderable.
+
+**Tests (28 new/updated, 251 backend tests passing):**
+- `backend/tests/test_docs_extract.py` (new, 4 tests) — cache hit, cache miss + no API → clean skip, extractor exception → fail via `run_cell`, stale cache version → re-extract.
+- `backend/tests/test_docs_render.py` (new, 4 tests) — happy path against the real Flightscape template, missing template → fail with `step="render"`, missing record JSON → fail, idempotent re-render.
+- `backend/tests/test_orchestrator_docs_pass.py` (extended) — added `TestBuildClaudeClient` (2 tests) and `TestExtractRenderPasses` (4 tests covering happy path, Pass 4 fail / Pass 5 skip, Pass 4 succeed / Pass 5 fail, and the `skipped_no_api` clean-skip path). Existing Pass 3 tests were patched to mock out the converter so they stay focused on Pass 3 behaviour.
+- `backend/tests/test_docs_fetcher.py` (extended) — single-transition happy path, `not_found_reason: no_match`, `not_found_reason: ambiguous_match`. Existing tests that asserted the `discovered` intermediate state were updated to assert the final state directly.
+- `backend/tests/conftest.py` — sample tracker JSON fixture updated to the new release_notes schema (drop `discovered_at`, add `extracted_at`).
+
+**Smoke test verdict (2026-04-15):** ✅ PASS. Real end-to-end run against `8.0.18.1`: cache hit on extract ($0 cost), 13 items rendered into a 6.2 MB DOCX, status advanced `downloaded → extracted → converted`, all side fields populated. See HANDOFF.md → "Smoke test recipe" for the no-API setup.
 
 ---
 

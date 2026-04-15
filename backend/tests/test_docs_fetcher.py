@@ -83,14 +83,15 @@ class TestFetchReleaseNotes:
             dest_dir=tmp_path / "release_notes",
         )
 
+        # Single transition: not_started → downloaded. source_url and
+        # source_pdf_path are both set together at the end of the happy path.
         assert patch.release_notes.status == "downloaded"
-        assert patch.release_notes.discovered_at is not None
         assert patch.release_notes.downloaded_at is not None
         assert patch.release_notes.source_url == match.article_url
         assert patch.release_notes.source_pdf_path is not None
         assert Path(patch.release_notes.source_pdf_path).exists()
 
-    def test_not_found_transitions_to_not_found(self, tmp_path: Path, caplog):
+    def test_not_found_no_match_sets_reason(self, tmp_path: Path, caplog):
         client = FakeClient(find_exc=ZendeskNotFound("nope"))
         patch = _new_patch()
 
@@ -103,13 +104,13 @@ class TestFetchReleaseNotes:
             )
 
         assert patch.release_notes.status == "not_found"
-        assert patch.release_notes.discovered_at is None
+        assert patch.release_notes.not_found_reason == "no_match"
         assert patch.release_notes.downloaded_at is None
         assert patch.release_notes.source_pdf_path is None
         assert any("zendesk.fetch.no_match" in r.message for r in caplog.records)
         assert client.download_calls == []
 
-    def test_ambiguous_transitions_to_not_found_with_distinct_log(
+    def test_ambiguous_sets_not_found_reason_and_log(
         self, tmp_path: Path, caplog,
     ):
         candidates = [
@@ -128,6 +129,7 @@ class TestFetchReleaseNotes:
             )
 
         assert patch.release_notes.status == "not_found"
+        assert patch.release_notes.not_found_reason == "ambiguous_match"
         assert any(
             "zendesk.fetch.ambiguous_match" in r.message for r in caplog.records
         )
@@ -163,13 +165,13 @@ class TestFetchReleaseNotes:
                 version="8.1.16.1",
                 dest_dir=tmp_path / "release_notes",
             )
-        # We did transition to "discovered" before the download — that's OK
-        # because that step (the find) actually completed successfully. The
-        # exception happened on the download. The cell will be picked up next
-        # scan only if status is still "not_started", so we want to leave it
-        # at "discovered" so auto-scan doesn't keep retrying it. Manual
-        # refetch will be the recovery path (PLAN §4.2).
-        assert patch.release_notes.status == "discovered"
+        # The download crashed before the success path could set status =
+        # "downloaded" or any of source_url / source_pdf_path. Workflow status
+        # stays at not_started so the next scan retries the whole fetch — the
+        # PDF download was the failure mode and is exactly what we want to
+        # retry (likely transient). No partial state to clean up.
+        assert patch.release_notes.status == "not_started"
+        assert patch.release_notes.source_url is None
         assert patch.release_notes.source_pdf_path is None
 
 

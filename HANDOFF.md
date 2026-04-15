@@ -1,9 +1,9 @@
 # Implementation Handoff
 
-**Date:** 2026-04-08 (last updated 2026-04-11)
+**Date:** 2026-04-08 (last updated 2026-04-15)
 **Author:** Alexandre Fiaschi (assisted by Claude Code)
 
-**Status:** Backend complete (5 blocks, 121 tests). Frontend complete F1–F5 (F6 testing deferred). Docs pipeline in progress: Units 0–3 done; **Unit 4 (Block B prototype) shipped first iteration on 2026-04-11 — quality still below acceptable workflow, verdict deferred, more iterations needed before Unit 5.** Design in [PLAN_DOCS_PIPELINE.md](PLAN_DOCS_PIPELINE.md). Read that doc before starting any docs-pipeline work.
+**Status:** Backend complete (5 blocks, 121 tests). Frontend complete F1–F5 (F6 testing deferred). Docs pipeline: **Units 0–5 done**. Unit 4 verdict is **go** on the Claude-extraction path (Unit 4.5). Unit 5 wires `extract_release_notes` and `render_release_notes` into the orchestrator as Pass 4 + Pass 5, advancing patches `downloaded → extracted → converted` automatically. 251 backend tests passing. Design in [PLAN_DOCS_PIPELINE.md](PLAN_DOCS_PIPELINE.md). Next up is Unit 6 (API endpoints + scan history).
 
 ---
 
@@ -39,9 +39,9 @@ Run `python scripts/test_zendesk_scraper.py --check-auth --verbose` to verify au
 
 ---
 
-## DOCX Conversion Prototype Gotchas (Unit 4 — Block B, in progress)
+## DOCX Conversion Prototype Gotchas (Unit 4 — Block B, prototype reference)
 
-Standalone PDF → CAE-templated DOCX prototype at `scripts/test_docx_conversion.py`. First iteration shipped 2026-04-11. **Quality is below acceptable workflow** — the script is checked in but Unit 5 (production wiring) is blocked until iterations close the remaining gaps. Non-obvious traps:
+Standalone PDF → CAE-templated DOCX prototype at `scripts/test_docx_conversion.py`. **Verdict (2026-04-14): go on the Claude path (`--mode claude`).** The fast/hybrid backends are still checked in for reference but were superseded by the Claude extractor (Unit 4.5) and are not used by the production pipeline. Unit 5 lifted the Claude-mode rendering helpers into `backend/app/pipelines/docs/converter.py`. The script remains useful for ad-hoc experiments — its cache lives at `docs_example/conversion_prototype/.cache/` and is intentionally separate from the pipeline cache at `state/cache/claude/`. Non-obvious traps from the prototype (still relevant when iterating on the converter):
 
 - **Java 21 required, not on PATH by default.** opendataloader-pdf calls a Java CLI under the hood. On Alex's macOS, Java 21 lives at `/opt/homebrew/opt/openjdk@21` but the system stub at `/usr/bin/java` shadows it. Always export before running:
   ```bash
@@ -78,6 +78,48 @@ Standalone PDF → CAE-templated DOCX prototype at `scripts/test_docx_conversion
 - **Hybrid server is heavy.** `opendataloader-pdf-hybrid --port 5002` initializes IBM Docling models in ~30s and uses ~1.5 GB RAM. Use `--device mps` on Apple Silicon. Once started, leave it running for the duration of the iteration session. The script auto-detects whether the server is up via a TCP probe and falls back to fast with a clear log line if not.
 
 Run `python scripts/test_docx_conversion.py --pdf <pdf> --output <docx> --mode hybrid --verbose` for one PDF. See the script docstring for full CLI usage.
+
+---
+
+## Docs Pipeline Wiring Gotchas (Unit 5)
+
+Unit 5 ships the converter in two stages, not one. The orchestrator's `run_scan_product` now does five sequential passes instead of three:
+
+1. SFTP discovery
+2. Binaries download
+3. Zendesk fetch (`fetch_release_notes`)
+4. **Claude extract (`extract_release_notes`)** — new
+5. **DOCX render (`render_release_notes`)** — new
+
+Workflow status flow on the docs side: `not_started → downloaded → extracted → converted → ...`. A few non-obvious things to know:
+
+- **`discovered` is gone, replaced by `extracted`.** The old `not_started → discovered → downloaded` two-step inside the fetcher was a sub-step smell (encoded "halfway through the fetch attempt" as a workflow value). It was collapsed in Unit 5: the fetcher now sets `source_url`, `source_pdf_path`, and `status = "downloaded"` together at the success path. `discovered_at` was dropped from `ReleaseNotesState` — Pydantic silently ignores it on load, so existing state files are forward-compatible. **Binaries kept its `discovered` state** because there it's a real first-class state set by SFTP discovery before any download attempt.
+
+- **The four-bullet rule for adding a workflow status value** (so future units don't reintroduce sub-step smells): a value earns its place only if all four are true — (1) retry independence saves real cost or time, (2) failure modes are distinct from neighbors, (3) operators want to filter on it as a real business question, (4) it produces a persisted artifact downstream stages consume. `extracted` passes all four. `discovered` (release notes) passed none. `pdf_exported` (planned for Unit 10) currently fails the rule too — **don't add it when Unit 10 ships**, fold it into the publish action and rely on `last_run.step` for triage.
+
+- **Two cache directories, not one.** The standalone script writes to `docs_example/conversion_prototype/.cache/claude/` and the pipeline writes to `state/cache/claude/`. Both use the same SHA256-keyed format and Pydantic schema, so you can copy a cache file between them when bootstrapping. Keep them separate so script experiments don't pollute prod state.
+
+- **Cache hit means the API is never called, even with `claude.enabled=true`.** SHA256 of PDF bytes is the cache key. Same PDF → same hash → same cached extraction. Different PDF → different hash → fresh API call. The cache loader also checks `extractor_version` so bumping `EXTRACTOR_VERSION` invalidates every cached record automatically.
+
+- **`claude.enabled` gates API calls only, not the convert pass.** The pass always runs. Cache hit → `extracted` for free. Cache miss + `enabled=false` → clean skip with `convert.extract.skipped reason=claude_disabled`, workflow status untouched, `last_run.state=success`. Cache miss + `enabled=true` → real API call. Dev mode gets the full pipeline including DOCX rendering on cached patches without paying anything.
+
+- **`extract_release_notes` returns a literal, not just None.** `"extracted"` on success, `"skipped_no_api"` on cache miss + disabled API. The orchestrator uses a `result_holder = {"value": None}` closure to capture the return value through `run_cell` (which wraps the work function). The literal lets us count `notes_extract_skipped` separately from `notes_extracted` without inventing a new workflow status.
+
+- **`source_pdf_path` should always be absolute.** The fetcher writes absolute paths via `settings.patches_dir / product_id / version / "release_notes" / safe_name(...)`. The converter uses `Path.resolve()` on the value, so a *relative* path would resolve against the current working directory (which is `backend/` when running from there) instead of the project root. **If you ever hand-edit a state file**, use absolute paths or the smoke test will fail with `Source PDF missing`.
+
+- **Two passes, not one mixed pass.** Pass 4 walks every `downloaded` patch and runs extract; Pass 5 walks every `extracted` patch and runs render. This is the standard ETL stage pattern (Airflow tasks, Dagster ops, Prefect tasks) and gives clean per-stage logs (`scan.docs.extract.*` vs `scan.docs.render.*`) and per-stage retry semantics. The cache makes "fix-and-retry render" cost zero API dollars.
+
+- **Step name semantics, post-Unit-5.** `cell.last_run.step` is non-None only when `state == "failed"`. The lifecycle helper sets `step = step_name` (the outer name passed to `run_cell`) on exception. Today's full step set: `download` (binaries Pass 2), `fetch_release_notes` (Pass 3), `extract` (Pass 4), `render` (Pass 5). One step per pass, no mid-flight updates.
+
+- **`not_found_reason` side field.** When the fetcher catches `ZendeskNotFound` it sets `cell.not_found_reason = "no_match"`; for `ZendeskAmbiguous` it sets `"ambiguous_match"`. This is a side field on `ReleaseNotesState` (not a status split) so the future UI can render different copy ("no article yet" vs "multiple matches — please review on Zendesk") without bloating the workflow `Literal`. Unit 8 will read it.
+
+- **Smoke test recipe** (no API call, real end-to-end):
+  1. Copy a PDF + its images dir into `patches/<product>/<version>/release_notes/`
+  2. Copy the matching cached extraction from `docs_example/conversion_prototype/.cache/claude/<hash>.json` to `state/cache/claude/<hash>.json` (the hash filename matches because both keys are SHA256 of the PDF bytes)
+  3. Add a patch entry to `state/patches/<product>.json` with `release_notes.status = "downloaded"` and an **absolute** `source_pdf_path`
+  4. Call `run_scan_product(...)` directly (or `POST /scan` via the API) — Pass 4 hits the cache, Pass 5 renders the DOCX. Total cost: $0.
+
+- **Tests structure.** `backend/tests/test_docs_extract.py` covers `extract_release_notes` in isolation (cache hit, skip, failure, version guard). `backend/tests/test_docs_render.py` covers `render_release_notes` in isolation against the real Flightscape template. `backend/tests/test_orchestrator_docs_pass.py` was extended with `_build_claude_client` tests and a `TestExtractRenderPasses` class covering the multi-scan retry scenarios. The existing Unit 3 fetcher tests were updated to drop the `discovered` intermediate state and add `not_found_reason` assertions.
 
 ---
 

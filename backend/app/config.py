@@ -59,5 +59,18 @@ class Settings(BaseSettings):
     def patches_dir(self) -> Path:
         return PROJECT_ROOT / "patches"
 
+    @property
+    def docs_template_path(self) -> Path:
+        return (
+            PROJECT_ROOT
+            / "docs_example"
+            / "templates"
+            / "Flightscape-English-External Business Document.docx"
+        )
+
+    @property
+    def docs_cache_dir(self) -> Path:
+        return PROJECT_ROOT / "state" / "cache" / "claude"
+
 
 settings = Settings()

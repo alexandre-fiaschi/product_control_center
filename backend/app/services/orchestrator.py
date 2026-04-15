@@ -1,14 +1,16 @@
-"""Coordinates SFTP scan → discover → download → docs fetch → update state."""
+"""Coordinates SFTP scan → discover → download → docs fetch → extract → render → save."""
 
 import logging
 from datetime import datetime, timezone
 from typing import Any
 
 from app.config import settings
+from app.integrations.claude.client import ClaudeClient
 from app.integrations.sftp.connector import SFTPConnector
 from app.integrations.sftp.scanner import discover_patches, update_tracker
 from app.integrations.zendesk import ZendeskAuthError, ZendeskClient
 from app.pipelines.binaries.fetcher import download_patch
+from app.pipelines.docs.converter import extract_release_notes, render_release_notes
 from app.pipelines.docs.fetcher import fetch_release_notes
 from app.services.lifecycle import run_cell
 from app.state.manager import load_tracker, save_tracker
@@ -47,6 +49,24 @@ def _build_zendesk_client() -> ZendeskClient | None:
         return None
 
 
+def _build_claude_client() -> ClaudeClient | None:
+    """Build a ClaudeClient if the feature flag is on and the API key is set.
+
+    Returns None if either is missing — meaning "no API calls during this
+    scan". The convert pass still runs and uses cached extractions for any
+    patch whose record is already on disk; cache misses are logged as a
+    clean skip rather than a failure.
+    """
+    claude_cfg = settings.pipeline_config.get("pipeline", {}).get("claude", {})
+    if not claude_cfg.get("enabled"):
+        logger.info("scan.claude.disabled reason=feature_flag_off")
+        return None
+    if not settings.ANTHROPIC_API_KEY:
+        logger.warning("scan.claude.disabled reason=missing_api_key")
+        return None
+    return ClaudeClient.from_settings(settings)
+
+
 def run_scan(product_ids: list[str] | None = None) -> dict[str, Any]:
     """Scan SFTP for all (or specified) products. Returns summary of results."""
     products_cfg = settings.pipeline_config["pipeline"]["products"]
@@ -60,6 +80,8 @@ def run_scan(product_ids: list[str] | None = None) -> dict[str, Any]:
     # Build the Zendesk client once for the whole scan. One login session is
     # reused across every product and every patch (1 login → N PDF downloads).
     zendesk_client = _build_zendesk_client()
+    # Same one-build-many-uses pattern for Claude.
+    claude_client = _build_claude_client()
 
     try:
         with SFTPConnector(settings) as conn:
@@ -72,6 +94,7 @@ def run_scan(product_ids: list[str] | None = None) -> dict[str, Any]:
                     results[pid] = run_scan_product(
                         conn, pid, products_cfg[pid],
                         zendesk_client=zendesk_client,
+                        claude_client=claude_client,
                     )
                 except Exception:
                     logger.error("scan.product.failed product=%s", pid, exc_info=True)
@@ -86,12 +109,21 @@ def run_scan(product_ids: list[str] | None = None) -> dict[str, Any]:
     total_notes_downloaded = sum(r.get("notes_downloaded", 0) for r in results.values())
     total_notes_not_found = sum(r.get("notes_not_found", 0) for r in results.values())
     total_notes_failed = sum(r.get("notes_failed", 0) for r in results.values())
+    total_notes_extracted = sum(r.get("notes_extracted", 0) for r in results.values())
+    total_notes_extract_skipped = sum(r.get("notes_extract_skipped", 0) for r in results.values())
+    total_notes_extract_failed = sum(r.get("notes_extract_failed", 0) for r in results.values())
+    total_notes_rendered = sum(r.get("notes_rendered", 0) for r in results.values())
+    total_notes_render_failed = sum(r.get("notes_render_failed", 0) for r in results.values())
     total_errors = sum(1 for r in results.values() if "error" in r)
     logger.info(
         "scan.summary products=%d discovered=%d downloaded=%d failed=%d "
-        "notes_downloaded=%d notes_not_found=%d notes_failed=%d product_errors=%d",
+        "notes_downloaded=%d notes_not_found=%d notes_failed=%d "
+        "notes_extracted=%d notes_extract_skipped=%d notes_extract_failed=%d "
+        "notes_rendered=%d notes_render_failed=%d product_errors=%d",
         len(results), total_discovered, total_downloaded, total_failed,
         total_notes_downloaded, total_notes_not_found, total_notes_failed,
+        total_notes_extracted, total_notes_extract_skipped, total_notes_extract_failed,
+        total_notes_rendered, total_notes_render_failed,
         total_errors,
     )
     return results
@@ -103,8 +135,9 @@ def run_scan_product(
     product_cfg: dict,
     *,
     zendesk_client: ZendeskClient | None = None,
+    claude_client: ClaudeClient | None = None,
 ) -> dict[str, Any]:
-    """Scan a single product: discover → download binaries → fetch docs → save."""
+    """Scan a single product: discover → download binaries → fetch docs → extract → render → save."""
     logger.info("scan.product.start product=%s", product_id)
 
     tracker = load_tracker(product_id)
@@ -178,13 +211,82 @@ def run_scan_product(
                 elif patch.release_notes.last_run.state == "failed":
                     notes_failed += 1
 
+    # Pass 4: Claude extraction (PLAN_DOCS_PIPELINE.md §2 Block B / Unit 5).
+    # Walks ALL patches whose release_notes.status == "downloaded". The cache
+    # key is the SHA256 of the PDF bytes, so re-runs on the same PDF skip the
+    # API call entirely. claude.enabled gates API calls only — when it's off,
+    # the pass still runs and extracts any patch whose record is already
+    # cached, then logs a clean skip for the rest.
+    notes_extracted = 0
+    notes_extract_skipped = 0
+    notes_extract_failed = 0
+    for version_data in tracker.versions.values():
+        for pid, patch in version_data.patches.items():
+            if patch.release_notes.status != "downloaded":
+                continue
+            result_holder: dict[str, Any] = {"value": None}
+
+            def work(p=patch, vid=pid):
+                result_holder["value"] = extract_release_notes(
+                    p,
+                    product_id=product_id,
+                    version=vid,
+                    claude_client=claude_client,
+                )
+
+            ok = run_cell(
+                patch.release_notes,
+                work,
+                step_name="extract",
+                product=product_id,
+                version=pid,
+            )
+            if ok:
+                if result_holder["value"] == "extracted":
+                    notes_extracted += 1
+                else:
+                    notes_extract_skipped += 1
+            elif patch.release_notes.last_run.state == "failed":
+                notes_extract_failed += 1
+
+    # Pass 5: render DOCX from extracted records. Walks ALL patches whose
+    # release_notes.status == "extracted". Always runs — no flag, no API,
+    # pure local Python. Idempotent on the orchestrator side because we
+    # filter by status == "extracted".
+    notes_rendered = 0
+    notes_render_failed = 0
+    for version_data in tracker.versions.values():
+        for pid, patch in version_data.patches.items():
+            if patch.release_notes.status != "extracted":
+                continue
+            ok = run_cell(
+                patch.release_notes,
+                lambda p=patch, vid=pid: render_release_notes(
+                    p,
+                    product_id=product_id,
+                    version=vid,
+                    template_path=settings.docs_template_path,
+                ),
+                step_name="render",
+                product=product_id,
+                version=pid,
+            )
+            if ok:
+                notes_rendered += 1
+            elif patch.release_notes.last_run.state == "failed":
+                notes_render_failed += 1
+
     # Save tracker
     save_tracker(tracker)
     logger.info(
         "scan.product.summary product=%s discovered=%d downloaded=%d failed=%d "
-        "notes_downloaded=%d notes_not_found=%d notes_failed=%d",
+        "notes_downloaded=%d notes_not_found=%d notes_failed=%d "
+        "notes_extracted=%d notes_extract_skipped=%d notes_extract_failed=%d "
+        "notes_rendered=%d notes_render_failed=%d",
         product_id, len(new_patch_ids), downloaded, failed,
         notes_downloaded, notes_not_found, notes_failed,
+        notes_extracted, notes_extract_skipped, notes_extract_failed,
+        notes_rendered, notes_render_failed,
     )
 
     return {
@@ -196,4 +298,9 @@ def run_scan_product(
         "notes_downloaded": notes_downloaded,
         "notes_not_found": notes_not_found,
         "notes_failed": notes_failed,
+        "notes_extracted": notes_extracted,
+        "notes_extract_skipped": notes_extract_skipped,
+        "notes_extract_failed": notes_extract_failed,
+        "notes_rendered": notes_rendered,
+        "notes_render_failed": notes_render_failed,
     }

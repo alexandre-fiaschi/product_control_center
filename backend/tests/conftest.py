@@ -102,8 +102,8 @@ def sample_tracker_json():
                         },
                         "release_notes": {
                             "status": "published",
-                            "discovered_at": None,
                             "downloaded_at": None,
+                            "extracted_at": None,
                             "converted_at": None,
                             "approved_at": None,
                             "published_at": "2026-01-28T00:00:00+00:00",

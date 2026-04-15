@@ -28,9 +28,9 @@ class BinariesState(BaseModel):
 
 
 class ReleaseNotesState(BaseModel):
-    status: Literal["not_started", "discovered", "downloaded", "converted", "pending_approval", "approved", "pdf_exported", "published", "not_found"] = "not_started"
-    discovered_at: datetime | None = None
+    status: Literal["not_started", "downloaded", "extracted", "converted", "pending_approval", "approved", "pdf_exported", "published", "not_found"] = "not_started"
     downloaded_at: datetime | None = None
+    extracted_at: datetime | None = None
     converted_at: datetime | None = None
     approved_at: datetime | None = None
     published_at: datetime | None = None
@@ -39,6 +39,9 @@ class ReleaseNotesState(BaseModel):
     jira_ticket_url: str | None = None
     source_pdf_path: str | None = None
     source_url: str | None = None
+    record_json_path: str | None = None
+    generated_docx_path: str | None = None
+    not_found_reason: Literal["no_match", "ambiguous_match"] | None = None
     last_run: LastRun = LastRun()
 
 

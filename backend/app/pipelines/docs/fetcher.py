@@ -34,8 +34,11 @@ def fetch_release_notes(
     """Discover and download the Zendesk release-notes PDF for one patch.
 
     Workflow status transitions (only this function may touch them):
-      - Happy path: not_started → discovered → downloaded
-      - Clean negative (no article / multiple matches): not_started → not_found
+      - Happy path: not_started → downloaded (single transition at the end
+        of the successful fetch — sets source_url, source_pdf_path, and
+        downloaded_at together)
+      - Clean negative (no article): not_started → not_found, not_found_reason="no_match"
+      - Clean negative (multiple matches): not_started → not_found, not_found_reason="ambiguous_match"
       - Exception (login, network, HTTP, IO): WORKFLOW STATUS UNTOUCHED.
         Run status is recorded by run_cell when the exception propagates.
 
@@ -53,6 +56,7 @@ def fetch_release_notes(
             product_id, version,
         )
         cell.status = "not_found"
+        cell.not_found_reason = "no_match"
         return
     except ZendeskAmbiguous as exc:
         logger.warning(
@@ -60,19 +64,17 @@ def fetch_release_notes(
             product_id, version, len(exc.candidates),
         )
         cell.status = "not_found"
+        cell.not_found_reason = "ambiguous_match"
         return
 
-    # Match found — advance to discovered, download the PDF, advance to downloaded.
-    now = datetime.now(timezone.utc)
-    cell.status = "discovered"
-    cell.discovered_at = now
-    cell.source_url = match.article_url
-
+    # Match found — download the PDF, then transition to downloaded in one
+    # shot (set source_url, source_pdf_path, status, downloaded_at together).
     dest_path = dest_dir / safe_name(match.pdf_filename)
     client.download_pdf(match.pdf_url, dest_path)
 
     cell.status = "downloaded"
     cell.downloaded_at = datetime.now(timezone.utc)
+    cell.source_url = match.article_url
     cell.source_pdf_path = str(dest_path)
     logger.info(
         "zendesk.fetch.success product=%s version=%s pdf=%s",

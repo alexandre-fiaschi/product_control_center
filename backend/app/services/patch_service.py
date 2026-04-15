@@ -23,9 +23,9 @@ BINARIES_TRANSITIONS = {
 }
 
 RELEASE_NOTES_TRANSITIONS = {
-    "not_started": ["discovered"],
-    "discovered": ["downloaded"],
-    "downloaded": ["converted"],
+    "not_started": ["downloaded"],
+    "downloaded": ["extracted"],
+    "extracted": ["converted"],
     "converted": ["pending_approval"],
     "pending_approval": ["approved"],
     "approved": ["pdf_exported"],

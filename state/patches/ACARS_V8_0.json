@@ -1,7 +1,55 @@
 {
   "product_id": "ACARS_V8_0",
-  "last_scanned_at": "2026-04-03T17:04:36.529476+00:00",
+  "last_scanned_at": "2026-04-03T17:04:36.529476Z",
   "versions": {
+    "8.0.18": {
+      "patches": {
+        "8.0.18.1": {
+          "sftp_folder": "8_0_18_1",
+          "sftp_path": "/ACARS_V8_0/8_0_18/8_0_18_1",
+          "local_path": "patches/ACARS_V8_0/8.0.18.1",
+          "binaries": {
+            "status": "published",
+            "discovered_at": "2026-04-03T17:01:12.384407Z",
+            "downloaded_at": "2026-04-03T17:01:12.674182Z",
+            "approved_at": null,
+            "published_at": "2025-09-15T00:00:00Z",
+            "jira_ticket_key": null,
+            "jira_ticket_url": null,
+            "last_run": {
+              "state": "idle",
+              "started_at": null,
+              "finished_at": null,
+              "step": null,
+              "error": null
+            }
+          },
+          "release_notes": {
+            "status": "converted",
+            "downloaded_at": "2026-04-15T00:00:00Z",
+            "extracted_at": "2026-04-14T23:45:36.061702Z",
+            "converted_at": "2026-04-14T23:45:36.688161Z",
+            "approved_at": null,
+            "published_at": null,
+            "pdf_exported_at": null,
+            "jira_ticket_key": null,
+            "jira_ticket_url": null,
+            "source_pdf_path": "/Users/alexandrefiaschi/Desktop/OpsCommDocsPipeline/patches/ACARS_V8_0/8.0.18.1/release_notes/8.0.18.1 - Release Notes.pdf",
+            "source_url": null,
+            "record_json_path": "/Users/alexandrefiaschi/Desktop/OpsCommDocsPipeline/patches/ACARS_V8_0/8.0.18.1/release_notes/8.0.18.1.json",
+            "generated_docx_path": "/Users/alexandrefiaschi/Desktop/OpsCommDocsPipeline/patches/ACARS_V8_0/8.0.18.1/release_notes/8.0.18.1.docx",
+            "not_found_reason": null,
+            "last_run": {
+              "state": "success",
+              "started_at": "2026-04-14T23:45:36.061810Z",
+              "finished_at": "2026-04-14T23:45:36.688235Z",
+              "step": null,
+              "error": null
+            }
+          }
+        }
+      }
+    },
     "8.0.28": {
       "patches": {
         "8.0.28.0": {
@@ -10,23 +58,42 @@
           "local_path": "patches/ACARS_V8_0/8.0.28.0",
           "binaries": {
             "status": "published",
-            "discovered_at": "2026-04-03T17:01:12.384407+00:00",
-            "downloaded_at": "2026-04-03T17:01:12.674182+00:00",
+            "discovered_at": "2026-04-03T17:01:12.384407Z",
+            "downloaded_at": "2026-04-03T17:01:12.674182Z",
             "approved_at": null,
-            "published_at": "2026-02-02T00:00:00+00:00",
+            "published_at": "2026-02-02T00:00:00Z",
             "jira_ticket_key": null,
-            "jira_ticket_url": null
+            "jira_ticket_url": null,
+            "last_run": {
+              "state": "idle",
+              "started_at": null,
+              "finished_at": null,
+              "step": null,
+              "error": null
+            }
           },
           "release_notes": {
             "status": "not_started",
-            "discovered_at": null,
             "downloaded_at": null,
+            "extracted_at": null,
             "converted_at": null,
             "approved_at": null,
             "published_at": null,
             "pdf_exported_at": null,
             "jira_ticket_key": null,
-            "jira_ticket_url": null
+            "jira_ticket_url": null,
+            "source_pdf_path": null,
+            "source_url": null,
+            "record_json_path": null,
+            "generated_docx_path": null,
+            "not_found_reason": null,
+            "last_run": {
+              "state": "idle",
+              "started_at": null,
+              "finished_at": null,
+              "step": null,
+              "error": null
+            }
           }
         },
         "8.0.28.1": {
@@ -35,23 +102,42 @@
           "local_path": "patches/ACARS_V8_0/8.0.28.1",
           "binaries": {
             "status": "published",
-            "discovered_at": "2026-04-03T17:01:12.384407+00:00",
-            "downloaded_at": "2026-04-03T17:01:12.674182+00:00",
+            "discovered_at": "2026-04-03T17:01:12.384407Z",
+            "downloaded_at": "2026-04-03T17:01:12.674182Z",
             "approved_at": null,
-            "published_at": "2026-02-02T00:00:00+00:00",
+            "published_at": "2026-02-02T00:00:00Z",
             "jira_ticket_key": null,
-            "jira_ticket_url": null
+            "jira_ticket_url": null,
+            "last_run": {
+              "state": "idle",
+              "started_at": null,
+              "finished_at": null,
+              "step": null,
+              "error": null
+            }
           },
           "release_notes": {
             "status": "published",
-            "discovered_at": null,
             "downloaded_at": null,
+            "extracted_at": null,
             "converted_at": null,
             "approved_at": null,
-            "published_at": "2025-12-10T00:00:00+00:00",
+            "published_at": "2025-12-10T00:00:00Z",
             "pdf_exported_at": null,
             "jira_ticket_key": null,
-            "jira_ticket_url": null
+            "jira_ticket_url": null,
+            "source_pdf_path": null,
+            "source_url": null,
+            "record_json_path": null,
+            "generated_docx_path": null,
+            "not_found_reason": null,
+            "last_run": {
+              "state": "idle",
+              "started_at": null,
+              "finished_at": null,
+              "step": null,
+              "error": null
+            }
           }
         }
       }
@@ -64,23 +150,42 @@
           "local_path": "patches/ACARS_V8_0/8.0.29.0",
           "binaries": {
             "status": "pending_approval",
-            "discovered_at": "2026-04-03T17:01:12.384407+00:00",
-            "downloaded_at": "2026-04-03T17:01:12.674182+00:00",
+            "discovered_at": "2026-04-03T17:01:12.384407Z",
+            "downloaded_at": "2026-04-03T17:01:12.674182Z",
             "approved_at": null,
             "published_at": null,
             "jira_ticket_key": null,
-            "jira_ticket_url": null
+            "jira_ticket_url": null,
+            "last_run": {
+              "state": "idle",
+              "started_at": null,
+              "finished_at": null,
+              "step": null,
+              "error": null
+            }
           },
           "release_notes": {
             "status": "not_started",
-            "discovered_at": null,
             "downloaded_at": null,
+            "extracted_at": null,
             "converted_at": null,
             "approved_at": null,
             "published_at": null,
             "pdf_exported_at": null,
             "jira_ticket_key": null,
-            "jira_ticket_url": null
+            "jira_ticket_url": null,
+            "source_pdf_path": null,
+            "source_url": null,
+            "record_json_path": null,
+            "generated_docx_path": null,
+            "not_found_reason": null,
+            "last_run": {
+              "state": "idle",
+              "started_at": null,
+              "finished_at": null,
+              "step": null,
+              "error": null
+            }
           }
         }
       }
@@ -93,23 +198,42 @@
           "local_path": "patches/ACARS_V8_0/8.0.30.0",
           "binaries": {
             "status": "pending_approval",
-            "discovered_at": "2026-04-03T17:01:12.384407+00:00",
-            "downloaded_at": "2026-04-03T17:01:12.674182+00:00",
+            "discovered_at": "2026-04-03T17:01:12.384407Z",
+            "downloaded_at": "2026-04-03T17:01:12.674182Z",
             "approved_at": null,
             "published_at": null,
             "jira_ticket_key": null,
-            "jira_ticket_url": null
+            "jira_ticket_url": null,
+            "last_run": {
+              "state": "idle",
+              "started_at": null,
+              "finished_at": null,
+              "step": null,
+              "error": null
+            }
           },
           "release_notes": {
             "status": "not_started",
-            "discovered_at": null,
             "downloaded_at": null,
+            "extracted_at": null,
             "converted_at": null,
             "approved_at": null,
             "published_at": null,
             "pdf_exported_at": null,
             "jira_ticket_key": null,
-            "jira_ticket_url": null
+            "jira_ticket_url": null,
+            "source_pdf_path": null,
+            "source_url": null,
+            "record_json_path": null,
+            "generated_docx_path": null,
+            "not_found_reason": null,
+            "last_run": {
+              "state": "idle",
+              "started_at": null,
+              "finished_at": null,
+              "step": null,
+              "error": null
+            }
           }
         },
         "8.0.30.1": {
@@ -118,23 +242,42 @@
           "local_path": "patches/ACARS_V8_0/8.0.30.1",
           "binaries": {
             "status": "pending_approval",
-            "discovered_at": "2026-04-03T17:01:12.384407+00:00",
-            "downloaded_at": "2026-04-03T17:01:12.674182+00:00",
+            "discovered_at": "2026-04-03T17:01:12.384407Z",
+            "downloaded_at": "2026-04-03T17:01:12.674182Z",
             "approved_at": null,
             "published_at": null,
             "jira_ticket_key": null,
-            "jira_ticket_url": null
+            "jira_ticket_url": null,
+            "last_run": {
+              "state": "idle",
+              "started_at": null,
+              "finished_at": null,
+              "step": null,
+              "error": null
+            }
           },
           "release_notes": {
             "status": "not_started",
-            "discovered_at": null,
             "downloaded_at": null,
+            "extracted_at": null,
             "converted_at": null,
             "approved_at": null,
             "published_at": null,
             "pdf_exported_at": null,
             "jira_ticket_key": null,
-            "jira_ticket_url": null
+            "jira_ticket_url": null,
+            "source_pdf_path": null,
+            "source_url": null,
+            "record_json_path": null,
+            "generated_docx_path": null,
+            "not_found_reason": null,
+            "last_run": {
+              "state": "idle",
+              "started_at": null,
+              "finished_at": null,
+              "step": null,
+              "error": null
+            }
           }
         }
       }
