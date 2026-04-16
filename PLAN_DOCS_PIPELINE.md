@@ -29,8 +29,8 @@ The work splits cleanly into three blocks. They depend on each other in order, b
 
 **Outputs:**
 - A PDF saved under `patches/<product>/<version>/release_notes/<filename>.pdf`.
-- State transition on `release_notes`: `not_started → discovered → downloaded`.
-- New fields on `ReleaseNotesState`: `source_pdf_path`, `source_url`, `source_published_at`.
+- State transition on `release_notes`: `not_started → downloaded` (single transition — set `source_url`, `source_pdf_path`, and status together at the success path; collapsed from the original `not_started → discovered → downloaded` in Unit 5).
+- New fields on `ReleaseNotesState`: `source_pdf_path`, `source_url`.
 
 **Naming convention to test (Alex confirmed this is standard):**
 - File: `8.0.16.1 - Release Notes.pdf`
@@ -83,9 +83,9 @@ The work splits cleanly into three blocks. They depend on each other in order, b
 
 **Design intent (the parts that aren't mechanical):**
 - The existing `approve` endpoint stays one endpoint. Same contract, request body targets `binaries` *or* `release_notes`.
-- A main scan is the three-pass flow from §4.0. The docs pass auto-acts on `not_started` only — never `not_found` (see §4.2 for the asymmetry).
+- A main scan is the five-pass flow from §4.0 (SFTP / binaries / docs fetch / docs extract / docs render). The docs fetch pass auto-acts on `not_started` only — never `not_found` (see §4.2 for the asymmetry).
 - The existing [Pipeline.tsx](frontend/src/views/Pipeline.tsx) table is already structured right: one row per patch, two status-badge columns, two approval buttons. **All UI changes are additive** — workflow status badges stay exactly as they are. Filter bar, history table, approval modal, overall layout: unchanged.
-- Approving binaries and approving docs are still independent buttons / endpoints / Jira tickets. The docs side has one extra final step: after approval, convert the approved DOCX to PDF and attach *that* to the docs Jira ticket. State: `approved → pdf_exported → published`.
+- Approving binaries and approving docs are still independent buttons / endpoints / Jira tickets. The docs side has one extra final step: after approval, convert the approved DOCX to PDF and attach *that* to the docs Jira ticket. State: single `approved → published` transition (no intermediate `pdf_exported` — see Unit 10).
 
 ---
 
@@ -110,14 +110,16 @@ This is the standard pattern in every production system that runs long-lived obj
 discovered → downloaded → pending_approval → approved → published
 ```
 
-**`ReleaseNotesState.status`** (one new value: `not_found`):
+**`ReleaseNotesState.status`** (as of Unit 5 + Unit 10 planned):
 ```
-not_started ─┬─ discovered → downloaded → converted → pending_approval → approved → pdf_exported → published
+not_started ─┬─ downloaded → extracted → converted → pending_approval → approved → published
              │
              └─ not_found  ◀── Zendesk lookup ran cleanly, no matching article yet
 ```
 
-`not_found` is the only addition. It means "we looked, Zendesk doesn't have it yet" — a soft, expected outcome since notes are often published after the binaries land on SFTP. Re-entered from `not_started` and exited back to `discovered` on a future successful scan.
+`not_found` is a clean-negative branch. It means "we looked, Zendesk doesn't have it yet" — a soft, expected outcome since notes are often published after the binaries land on SFTP. Re-entered from `not_started` and exited back to `downloaded` on a future successful scan (triggered by manual refetch or future webhook, never auto-scan — see §4.2). The side field `not_found_reason` distinguishes `"no_match"` from `"ambiguous_match"`.
+
+**Historical:** earlier drafts had a `discovered` workflow state between `not_started` and `downloaded`, and a `pdf_exported` state between `approved` and `published`. Both were collapsed — they were sub-steps of single business actions, not real business stages. The four-bullet rule (§3.5) is the test we apply to every proposed new workflow status value.
 
 **Workflow status contains no error values.** Ever. Errors are described by run status.
 
@@ -162,11 +164,13 @@ class BinariesState(BaseModel):
 
 
 class ReleaseNotesState(BaseModel):
-    status: Literal["not_started", "discovered", "downloaded", "converted",
-                    "pending_approval", "approved", "pdf_exported", "published",
+    # Post Unit 5 (added "extracted", dropped "discovered") + Unit 10 planning (no "pdf_exported")
+    status: Literal["not_started", "downloaded", "extracted", "converted",
+                    "pending_approval", "approved", "published",
                     "not_found"] = "not_started"
     last_run: LastRun = LastRun()
-    # + existing timestamps, jira fields
+    not_found_reason: Literal["no_match", "ambiguous_match"] | None = None
+    # + existing timestamps, jira fields, source_pdf_path, record_json_path, generated_docx_path
 ```
 
 A patch discovered from a scan produces **four independent cells**:
@@ -184,7 +188,7 @@ The lifecycle of every attempt (binaries or docs) is the same five steps:
 3. **Execute:** do the work, updating `last_run.step` as the attempt progresses through named steps.
 4. **On success:**
    - Set `last_run.state = success`, `last_run.finished_at = now()`.
-   - Advance `status` (workflow) if appropriate — e.g. docs fetch `not_started → discovered`, or `not_started → not_found` on clean negative.
+   - Advance `status` (workflow) if appropriate — e.g. docs fetch `not_started → downloaded`, or `not_started → not_found` on clean negative.
 5. **On exception:**
    - Set `last_run.state = failed`, `last_run.finished_at = now()`, populate `last_run.step` and `last_run.error`.
    - **Do not touch `status`** (workflow) — it stays whatever it was before the attempt.
@@ -217,17 +221,16 @@ Next attempt starts from step 1. When it begins, `last_run.state` flips back to 
 
 ### 4.0 Main scan flow
 
-A main scan is **three sequential passes over the same state**, each independent. SFTP discovery writes new patches to state *before* any download happens — the moment a patch is discovered, it exists in the system as a tracked entity, with `binaries.status = discovered` and `release_notes.status = not_started`. From that moment on, the two tracks progress independently.
+A main scan is **five sequential passes over the same state** (after Unit 5), each independent. SFTP discovery writes new patches to state *before* any download happens — the moment a patch is discovered, it exists in the system as a tracked entity, with `binaries.status = discovered` and `release_notes.status = not_started`. From that moment on, the two tracks progress independently.
 
 ```
-POST /scan (main scan):
+POST /pipeline/scan (main scan):
 
   1. SFTP DISCOVERY
      ─ list SFTP, find new patches
      ─ write to state immediately:
          binaries.status      = discovered
          release_notes.status = not_started
-     ─ the patch is now tracked, even though nothing is downloaded yet
 
   2. BINARIES PASS — for each cell where binaries.status == discovered
                      AND last_run.state != "running":
@@ -235,14 +238,33 @@ POST /scan (main scan):
      ─ on success: binaries.status moves discovered → downloaded → pending_approval
      ─ on failure: binaries.last_run.state = failed, workflow status untouched
 
-  3. DOCS PASS — for each cell where release_notes.status == not_started
-                 AND last_run.state != "running":
-     ─ run the per-cell lifecycle — fetch from Zendesk
-     ─ if found:        status moves not_started → discovered → downloaded → ...
-     ─ if cleanly not:  status = not_found, run state = success
+  3. DOCS FETCH PASS — for each cell where release_notes.status == not_started
+                       AND last_run.state != "running":
+     ─ fetch article + PDF from Zendesk
+     ─ if found:        status moves not_started → downloaded (single transition)
+     ─ if no article:   status = not_found, not_found_reason = "no_match"
+     ─ if ambiguous:    status = not_found, not_found_reason = "ambiguous_match"
      ─ if exception:    run state = failed, workflow status untouched
 
-  4. Persist scan record to state/scans.json with counts for each pass.
+  4. DOCS EXTRACT PASS — for each cell where release_notes.status == downloaded
+                         AND last_run.state != "running":
+     ─ SHA256-keyed cache lookup on the PDF bytes
+     ─ cache hit:                            status = extracted (free, no API)
+     ─ cache miss + claude.enabled=true:     call Claude API, save cache,
+                                             status = extracted
+     ─ cache miss + claude.enabled=false:    clean skip (workflow status
+                                             untouched, run state success,
+                                             log convert.extract.skipped)
+     ─ if exception:                         run state = failed, status untouched
+
+  5. DOCS RENDER PASS — for each cell where release_notes.status == extracted
+                        AND last_run.state != "running":
+     ─ load persisted record JSON + Flightscape template
+     ─ render via python-docx
+     ─ on success: status moves extracted → converted
+     ─ on failure: run state = failed (retry on next scan reuses cache — free)
+
+  6. Persist scan record to state/scans/<scan_id>.json with counts per pass.
 ```
 
 **Critical: the docs pass auto-acts on `not_started` only, NEVER on `not_found`.**
@@ -258,9 +280,10 @@ Instead: **publishing release notes is the developer's job, not the cron's job t
 
 Auto-fetch acts on patches that have **never been tried** (`not_started`); manual / future-webhook acts on patches that have been tried and came up empty (`not_found`). Two different intent levels, two different trigger mechanisms, one shared per-cell lifecycle.
 
-**Why three sequential passes and not interleaved:**
-- A binaries failure in pass 2 does not block the docs pass for the same patch — the two tracks are independent at the cell level.
-- Sequential passes keep logs readable and isolate external-system blast radius (SFTP issues vs Zendesk issues). Parallelizing later is a small change if scan volume ever demands it.
+**Why five sequential passes and not interleaved:**
+- A binaries failure in pass 2 does not block any docs pass for the same patch — the two tracks are independent at the cell level.
+- Sequential passes keep logs readable and isolate external-system blast radius (SFTP / Zendesk / Claude each have their own pass). Parallelizing later is a small change if scan volume ever demands it.
+- Each docs pass has its own retry semantics: Pass 4 retries re-use the cache (no $ cost), Pass 5 retries re-use the persisted record JSON (no API cost). Splitting extract and render into separate workflow stages is the standard ETL pattern (Airflow/Dagster/Prefect) — see Unit 5 decisions 1 and 3 for the four-bullet rule we used.
 
 ### 4.1 Two kinds of scan
 
@@ -268,9 +291,9 @@ These are different enough that they get different endpoints, different log name
 
 | | **Main scan** | **Targeted docs fetch** |
 |---|---|---|
-| **Scope** | Walks SFTP, discovers new patches, fans out to binaries download + docs fetch for everything new or retry-eligible | One (or N) specific known patch(es). Does not touch SFTP. |
+| **Scope** | Walks SFTP, discovers new patches, runs all 5 passes (binaries download + docs fetch + extract + render) for everything new or retry-eligible | One (or N) specific known patch(es). Does not touch SFTP. Runs Pass 3 (+ Pass 4 + 5 if newly `downloaded`). |
 | **Trigger** | Cron or "Start scan" button | UI row action or bulk version-header button |
-| **Endpoint** | `POST /scan` | `POST /patches/{id}/release-notes/refetch` (single), `POST /scan/release-notes?version=...` (bulk) |
+| **Endpoint** | `POST /pipeline/scan` (already shipped in Block 5; Unit 6 adds the 409 guard) | `POST /patches/{product_id}/{patch_id}/release-notes/refetch` (single, Unit 6), `POST /pipeline/scan/release-notes?version=...` (bulk, Unit 6) |
 | **Log namespace** | `scan.main.*` | `zendesk.fetch.*` (direct, no `scan.*` wrapping) |
 | **Locking** | Rejects if another main scan is running (409 Conflict) | Allowed during a main scan, because the per-cell lock (`last_run.state == running`) prevents double-work on the same cell |
 | **Purpose** | Discover + progress everything in one sweep | "I know this specific patch needs its notes — don't make me wait for the next cron tick" |
@@ -283,9 +306,9 @@ All three layers call the same per-cell attempt function. The state is the queue
 
 | Layer | Trigger | Eligible cells | Purpose |
 |-------|---------|----------------|---------|
-| **Auto on main scan** | Every `POST /scan` (cron or manual) | `release_notes.status == not_started` AND `last_run.state != running` | First-look only. Acts on patches that have never been tried. Bounded by definition — `not_found` is excluded so the eligibility set doesn't grow with the backlog. |
+| **Auto on main scan** | Every `POST /pipeline/scan` (cron or manual) | `release_notes.status == not_started` AND `last_run.state != running` | First-look only. Acts on patches that have never been tried. Bounded by definition — `not_found` is excluded so the eligibility set doesn't grow with the backlog. |
 | **Per-row manual** | UI "Refetch Release Notes" action button on a single patch | `release_notes.status ∈ {not_started, not_found}` AND `last_run.state != running` | Alex (or a future webhook) saying "look again now, the developer just published". Explicit human intent — `not_found` is fair game here. |
-| **Bulk** | Version-header button or filtered API call (`POST /scan/release-notes?version=...`) | same as per-row manual | Same explicit-intent semantics, but for a batch — e.g. "Refetch all missing notes in V8.1" after the developer announced a doc drop. |
+| **Bulk** | Version-header button or filtered API call (`POST /pipeline/scan/release-notes?version=...`) | same as per-row manual | Same explicit-intent semantics, but for a batch — e.g. "Refetch all missing notes in V8.1" after the developer announced a doc drop. |
 
 **Eligibility check pseudocode:**
 ```python
@@ -341,16 +364,18 @@ class ScanRecord(BaseModel):
 
 ---
 
-## 5. Open questions to decide before building
+## 5. Resolved questions (historical)
 
-These are decisions, not unknowns. Each one needs a yes/no before the relevant block starts.
+All six original open questions have been resolved. Kept here for history — don't re-open these without a new reason.
 
-1. **Block A:** Are Zendesk article titles 100% standardized to `<version> - Release Notes.pdf`, or do we need fuzzy matching? → check 5–10 real articles across V7.3, V8.0, V8.1.
-2. **Block A:** What's the auth model — service account credentials in `.env`, same as Jira? → confirm Alex pastes credentials himself per the standing rule.
-3. **Block B:** Run a standalone PDF→DOCX prototype against 3 representative real PDFs *before* wiring into the pipeline. If fidelity is bad, the whole plan changes (e.g. we may end up with a "human edits the DOCX" loop instead of full auto).
-4. **Block C:** DOCX preview in browser — v1 is "download to review" or do we invest in HTML rendering up front?
-5. **State:** Do we retrofit `last_run` onto existing state JSON files in one migration step, or lazily default to `idle` on load? Lazy is simpler but means no historical run data until the first attempt.
-6. **State:** Scan history storage — single `state/scans.json` file (simple, gets large) or `state/scans/<scan_id>.json` (many small files, rotation-friendly)?
+1. ✅ **Block A — Zendesk title standardization.** RESOLVED during Unit 3: titles are reliably `<version> - Release Notes.pdf` for the versions Alex tracks. Unit 3 shipped with exact-match + ambiguous-match fallback and that's been sufficient in practice.
+2. ✅ **Block A — Zendesk auth model.** RESOLVED during Unit 3: service-account credentials in `.env` (`ZENDESK_SUBDOMAIN`, `ZENDESK_EMAIL`, `ZENDESK_PASSWORD`), same pattern as Jira. Alex pastes them himself per the standing rule.
+3. ✅ **Block B — PDF → DOCX prototype.** RESOLVED in Unit 4.5 (Claude path): verdict is GO. Fast and hybrid backends were ruled out (reordering, OCR noise). Claude extraction produces a clean structured record that `render_record()` turns into an acceptable DOCX. Unit 5 shipped the integrated version.
+4. ✅ **Block C — DOCX preview in browser.** RESOLVED 2026-04-15: Unit 9 renders DOCX → PDF via `libreoffice --headless` for display-only; Alex opens the local DOCX in Word if he wants to tweak it. No in-browser record editor. See Unit 9 scope for the full rationale.
+5. ✅ **State — `last_run` migration.** RESOLVED in Unit 1: lazy default on load. Pydantic `LastRun()` default handles existing state files without a migration script. Same approach was used in Unit 5 for the `discovered`/`extracted` schema change, validated in production.
+6. ✅ **State — scan history storage.** RESOLVED in Unit 6 scope: `state/scans/<scan_id>.json` (many small files). Rotation-friendly, no need to load full history into memory for the running-check — just list the dir and inspect each file's `finished_at`.
+
+**Current open questions: none.** If new ones arise during implementation, add them here with a date.
 
 ---
 
@@ -452,7 +477,7 @@ Unit 4 (Block B prototype) is the only one that runs **in parallel** with the re
 
 **Files:**
 - `backend/app/integrations/zendesk.py` (new) — `ZendeskClient` class: login, find article by version, download PDF. No business logic, just integration.
-- `backend/app/pipelines/docs/fetcher.py` (new) — `fetch_release_notes(patch)`: calls the client, on success downloads PDF + transitions workflow status `not_started → discovered → downloaded`, on clean-negative transitions to `not_found`, on exception lets the lifecycle helper record the failure.
+- `backend/app/pipelines/docs/fetcher.py` (new) — `fetch_release_notes(patch)`: calls the client, on success downloads PDF + transitions workflow status `not_started → downloaded` (single transition, after Unit 5 cleanup), on clean-negative transitions to `not_found` with `not_found_reason` set, on exception lets the lifecycle helper record the failure.
 - [backend/app/services/orchestrator.py](backend/app/services/orchestrator.py) — add the docs pass after the binaries pass. Behind a config flag (`pipeline.docs.enabled`) so it can be turned off if Zendesk is unstable.
 - [backend/app/pipelines/docs/stub.py](backend/app/pipelines/docs/stub.py) — delete (replaced by `fetcher.py`).
 
@@ -546,25 +571,28 @@ Unit 4 (Block B prototype) is the only one that runs **in parallel** with the re
 
 ---
 
-### Unit 6 — Scan endpoints + scan history persistence
+### Unit 6 — Scan endpoint polish + refetch endpoints + scan history persistence
 
-**Effort:** Medium.
+**Effort:** Small–Medium.
 **Depends on:** unit 5.
 
-**Scope.** Three new API endpoints + scan history storage. **No UI yet** — endpoints are usable from curl / OpenAPI docs.
+**Scope.** The existing `POST /pipeline/scan` endpoint (shipped in Block 5) already runs the full 5-pass flow. Unit 6 adds three things on top: a 409 guard so two scans can't run simultaneously, two new endpoints for targeted / bulk release-notes refetch (needed because auto-scan never acts on `not_found`), and durable scan history so the 409 guard and future dashboards have something to read. **No UI yet** — endpoints are usable from curl / OpenAPI docs.
 
 **Files:**
-- `backend/app/api/pipeline.py` (existing or new) — `POST /scan` (main scan, returns 409 if another main scan is running per the `finished_at IS NULL` check from §4.3), `POST /patches/{id}/release-notes/refetch` (targeted, allowed during a main scan because per-cell lock handles it), `POST /scan/release-notes?version=...` (bulk, calls targeted in a loop).
-- `backend/app/state/scan_history.py` (new) — `ScanRecord` Pydantic model + `save_scan_record()` / `is_main_scan_running()` / `list_recent_scans()` helpers. Storage: **`state/scans/<scan_id>.json`** (decided in §5 question 6 — many small files, rotation-friendly, no need to load history into memory for the running-check).
-- `backend/app/state/models.py` — add `ScanRecord` model.
+- [backend/app/api/pipeline.py](backend/app/api/pipeline.py) — **retrofit the existing** `POST /pipeline/scan` and `POST /pipeline/scan/{product_id}` endpoints with the 409 Conflict guard (via `is_main_scan_running()`) + call `save_scan_record()` on entry and `finalize_scan_record()` on exit. Do **not** create a new endpoint at `/scan`.
+- [backend/app/api/patches.py](backend/app/api/patches.py) — add two new endpoints: `POST /patches/{product_id}/{patch_id}/release-notes/refetch` (targeted refetch, allowed during a main scan because per-cell lock handles concurrency) and `POST /pipeline/scan/release-notes?version=...` (bulk refetch, calls the targeted helper in a loop). Both reuse the existing `fetch_release_notes` → `extract_release_notes` → `render_release_notes` chain from Unit 5.
+- `backend/app/state/scan_history.py` (new) — `ScanRecord` Pydantic model + `save_scan_record()` / `finalize_scan_record()` / `is_main_scan_running()` / `list_recent_scans()` helpers. Storage: `state/scans/<scan_id>.json` (many small files, rotation-friendly, no need to load history into memory for the running-check — just list the dir and inspect each one's `finished_at`).
+- `backend/app/state/models.py` — add `ScanRecord` model (Literal trigger source, counts dict, timestamps).
 
 **Tests.**
-- POST /scan starts a main scan, writes a ScanRecord with `finished_at: null`, second POST /scan immediately returns 409.
-- POST /patches/{id}/release-notes/refetch is allowed during a main scan; if the cell is already `running`, returns a clear "already in progress" response.
-- Bulk endpoint loops correctly and reports per-cell outcomes.
-- `is_main_scan_running()` returns `True` while a scan record has no `finished_at` and `False` after.
+- `POST /pipeline/scan` starts a main scan, writes a ScanRecord with `finished_at: null`, second immediate call returns 409 Conflict.
+- After the first scan completes (`finished_at` populated), a subsequent `POST /pipeline/scan` runs normally.
+- `POST /patches/{product_id}/{patch_id}/release-notes/refetch` is allowed during a main scan; if the specific cell's `last_run.state == "running"`, returns a clear "already in progress" response (not 409 — the main scan might be the thing running it).
+- Bulk endpoint loops correctly, reports per-cell outcomes, and respects the same per-cell lock.
+- `is_main_scan_running()` returns `True` while any scan record has no `finished_at`, `False` after all are finalized.
+- Scan record counts match what `run_scan()` actually did (patches_total, binaries_new, notes_downloaded, notes_extracted, notes_rendered, etc.).
 
-**Done criteria:** all three endpoints visible in `/docs` Swagger, exercised with curl in dev, scan records appear in `state/scans/`.
+**Done criteria:** existing scan endpoint exercises unchanged behavior except for the 409 guard; two new endpoints visible in `/docs` Swagger; scan records appear in `state/scans/` after each scan.
 
 ---
 
@@ -610,35 +638,39 @@ Unit 4 (Block B prototype) is the only one that runs **in parallel** with the re
 
 ### Unit 9 — UI: side-by-side review view
 
-**Effort:** Medium–Large.
+**Effort:** Medium.
 **Depends on:** units 7 + 8.
 
-**Scope.** Review view with two main panels and a toggleable record editor. Triggered when "Approve Docs" is clicked on a `pending_approval` release-notes cell. This view is a **gate in front of** the existing `JiraApprovalModal`, not a replacement for it.
+**Scope.** Review view with two panels — source PDF on the left, rendered DOCX on the right — plus an "Open in Word" button that opens the local DOCX file on the user's machine. **No in-browser record editor** (decided 2026-04-15): if content looks wrong Alex opens Word, tweaks manually, and the tweak lives in the downstream DOCX. If the bug is systematic, it goes into the template or `render_record()` code once — not per-release UI edits.
 
-**Two review modes:**
+The view is a **gate in front of** the existing `JiraApprovalModal`, not a replacement for it.
 
-- **Visual comparison** (default) — PDF original on left, DOCX preview on right. The DOCX preview is rendered as PDF on the backend (via `libreoffice --headless`) so both panels show consistent PDF rendering. Quick check that content and layout look right.
-- **Content editing** (toggle when needed) — opens the extracted record (items, body blocks, images) as editable fields. Fix missing text, wrong images, reorder blocks. Save → re-render DOCX → preview updates.
-
-**Styling/formatting fixes:** "Open in Word" button links to the local `.docx` file path. Since the app runs locally, this opens directly in Microsoft Word for template-level styling tweaks (indent, font size, image width). Styling fixes go into the template or `render_record()` code once — not per-release manual edits.
+**Why DOCX is rendered as PDF for display.** Browsers can't natively render DOCX. The backend converts `generated_docx_path` → PDF on-the-fly via `libreoffice --headless` for the right panel's display. This is **display-only** — the canonical artifact stays the DOCX on disk; the PDF is a cached preview.
 
 Flow:
-1. Click "Approve Docs" → `DocsReviewView` opens.
-2. PDF on the left (pdf.js or `<embed>`, served by unit 7's endpoint).
-3. DOCX preview on the right (rendered as PDF by the backend). Plus "Open in Word" button for the local file path.
-4. If content needs fixing → toggle the record editor, edit, save, DOCX re-renders.
+1. Click "Approve Docs" on a `converted` release-notes cell → `DocsReviewView` opens.
+2. Source PDF on the left (via Unit 7's `GET /patches/{p}/{v}/release-notes/source.pdf`, rendered with pdf.js or `<embed>`).
+3. Converted DOCX on the right, shown as PDF (new endpoint converts DOCX → PDF via `libreoffice --headless`, cached by file mtime).
+4. "Open in Word" button — opens the local `generated_docx_path` on Alex's machine so he can tweak manually if needed. No back-trip to the browser; any manual edits stay in that local DOCX file.
 5. "Looks good, continue" button → closes the review view and opens the existing `JiraApprovalModal`, pre-filled for the docs ticket. No new Jira UI — reuse what binaries already uses.
-6. Jira modal approve → normal approve endpoint → Unit 10's `approved → pdf_exported → published` flow kicks in on the backend.
+6. Jira modal approve → existing `POST /patches/{p}/{v}/docs/approve` endpoint → Unit 10's publish flow kicks in on the backend.
 
-The review view itself does **not** advance workflow status — `pending_approval → approved` still happens through the Jira modal + approve endpoint, same pattern as binaries.
+The review view itself does **not** advance workflow status — `converted → approved` still happens through the Jira modal + approve endpoint, same pattern as binaries.
 
 **Files:**
-- `frontend/src/components/patches/DocsReviewView.tsx` (new) — two-panel viewer (PDF left, DOCX-as-PDF right) + toggleable record editor. "Open in Word" button for local file access. Emits a "continue" callback; the parent (Pipeline.tsx) then opens `JiraApprovalModal`.
+- `frontend/src/components/patches/DocsReviewView.tsx` (new) — two-panel viewer (PDF left, DOCX-rendered-as-PDF right), "Open in Word" button, "Looks good, continue" button. Emits a `continue` callback; the parent (Pipeline.tsx) opens `JiraApprovalModal` on it.
 - [frontend/src/views/Pipeline.tsx](frontend/src/views/Pipeline.tsx) — chain the existing "Approve Docs" path: open `DocsReviewView` first, then on continue open the existing `JiraApprovalModal`. Binaries "Approve" path is untouched.
-- `backend/app/api/patches.py` — add `POST /patches/{id}/release-notes/render` endpoint that re-renders DOCX from the record and converts to PDF preview via `libreoffice --headless`.
-- *(optional, if `file://` links prove unreliable in the browser)* `backend/app/api/patches.py` — add `POST /patches/{id}/release-notes/reveal` that runs `subprocess.run(["open", "-R", path])`. macOS-only, dev convenience.
+- `backend/app/api/patches.py` — add `GET /patches/{p}/{v}/release-notes/preview.pdf` that returns the DOCX converted to PDF. Runs `libreoffice --headless --convert-to pdf <generated_docx_path> --outdir <cache>`, caches the result by DOCX mtime, returns the PDF. Regenerates if the DOCX was re-rendered.
+- **Optional** (macOS dev convenience, if `file://` links misbehave in the browser): `POST /patches/{p}/{v}/release-notes/reveal` that runs `subprocess.run(["open", path])` to open the DOCX locally in Word.
 
-**Tests.** `npm run build` clean. Manual smoke test: open the review view on a real `pending_approval` patch, see the PDF render on both sides, toggle record editor, edit a field, see DOCX preview update, click "Open in Word" to verify local file access, click continue, see the Jira modal appear pre-filled, approve, confirm state advances through `approved → pdf_exported → published`.
+**What's explicitly NOT in Unit 9 anymore** (dropped 2026-04-15):
+- Record editor UI (edit items/blocks/images in the browser).
+- `POST /patches/{p}/{v}/release-notes/render` endpoint for re-rendering from an edited record. The `render_release_notes()` function stays available for programmatic use, but no endpoint exposes it.
+- Any "save and re-render" loop. DOCX is final once Pass 5 wrote it; the only edits happen in Word on Alex's local machine and are part of the final approved artifact.
+
+**LibreOffice dependency.** Unit 9 introduces `libreoffice --headless` as a runtime dependency on the dev machine. Documented in setup instructions. Fine for dev; a future prod deployment would need the same binary available. It's also used by Unit 10 for the final DOCX → PDF export, so the dependency isn't unique to Unit 9.
+
+**Tests.** `npm run build` clean. Manual smoke test: open the review view on a real `converted` patch, see the source PDF on the left and the rendered DOCX-as-PDF on the right, click "Open in Word" and confirm the local DOCX opens in Word on your machine, click continue, see the Jira modal appear pre-filled, approve, confirm state advances `pending_approval → approved → published` (Unit 10 handles the final transition).
 
 **Done criteria:** end-to-end docs review workflow works against real Zendesk-fetched release notes.
 
@@ -649,19 +681,30 @@ The review view itself does **not** advance workflow status — `pending_approva
 **Effort:** Small–Medium.
 **Depends on:** unit 9.
 
-**Scope.** Final transition. After a docs cell is approved, convert the approved DOCX to PDF and attach the PDF (not the DOCX) to the docs Jira ticket. State: `approved → pdf_exported → published`. This is the only step where the docs flow differs from binaries.
+**Scope.** Final transition. After a docs cell is approved, convert the approved DOCX to PDF and attach the PDF (not the DOCX) to the docs Jira ticket, then advance to `published`. Single transition `approved → published` — **no intermediate `pdf_exported` workflow status**.
+
+**Why no `pdf_exported` state** (decided during Unit 5, applying the four-bullet rule to the whole state machine): PDF export and Jira attachment both happen inside the same publish action with the same failure-mode universe. A `pdf_exported` intermediate would be a sub-step of "publish" dressed up as a workflow state — the same smell Unit 5 fixed by collapsing `discovered` on release notes. Instead, triage info lives on `last_run.step` (e.g. `step="pdf_export"` if LibreOffice fails, `step="jira_attach"` if the Jira call fails). The workflow status field stays focused on business stages only.
 
 **Files:**
-- `backend/app/pipelines/docs/exporter.py` (new) — `export_docx_to_pdf(docx_path) → pdf_path`. Wrap in lifecycle helper (`step_name="pdf_export"`).
-- [backend/app/services/patch_service.py](backend/app/services/patch_service.py) — extend the docs approve flow: after approval, call exporter, advance status to `pdf_exported`, then create Jira ticket and attach the PDF, then advance to `published`.
-- Tests against fixtures.
+- `backend/app/pipelines/docs/exporter.py` (new) — `export_docx_to_pdf(docx_path) → pdf_path`. Thin wrapper around `libreoffice --headless --convert-to pdf` (already a dev-machine dependency for Unit 9's preview endpoint, so no new infra). Output path: next to the DOCX as `<version>.pdf`. Idempotent: if the output PDF is newer than the DOCX, skip the conversion.
+- [backend/app/services/patch_service.py](backend/app/services/patch_service.py) — extend the docs approve flow as a single `run_cell(step_name="publish")`: (1) export DOCX → PDF, (2) create Jira ticket, (3) attach the PDF, (4) set `cell.status = "published"`. All three sub-steps live inside one work function.
+- `backend/app/state/models.py` — **drop `pdf_exported`** from `ReleaseNotesState.status` Literal. Also drop `pdf_exported_at`. Pydantic silently ignores them on load from any existing state files (same forward-compat pattern as Unit 5's `discovered` removal).
+
+**Triage on failure.** With `step_name="publish"` shared across all three sub-steps, `last_run.step` alone doesn't tell you which sub-step crashed. That's OK because each sub-step raises a distinctive exception type (python-docx/LibreOffice errors from export, `JiraAPIError` with an HTTP status code from create/attach) — the exception class name and message already pin down the phase. The traceback in the rotating log file closes any remaining ambiguity. If we ever need sharper triage (e.g. Grafana alerts differentiating "export broken" from "Jira broken"), the cheapest fix is to make `lifecycle.py` prepend `type(exc).__name__` to the stored error field (~2 lines). Don't design for that until it's needed.
+
+**Idempotency on retry.**
+- PDF export: re-running is cheap (local LibreOffice); the output path is the same regardless.
+- Jira create: `patch_service` already has a "two-step save" pattern from the binaries flow — if a ticket was created in a previous attempt, its key is persisted on the cell, and retries reuse it.
+- Jira attach: idempotent per the existing Jira client behavior.
+
+So a failed publish attempt leaves the cell at `approved` (workflow status untouched) and the next manual retry works cleanly, regardless of which sub-step failed last time.
 
 **Tests.**
-- Unit: exporter produces a valid PDF from a fixture DOCX.
-- Integration: full docs approve flow takes a `pending_approval` cell to `published` with a real Jira ticket key and PDF attachment (against a Jira fixture / mock).
-- Two-step save: if Jira fails after `pdf_exported`, the cell remains at `pdf_exported` on disk and can be retried.
+- Unit: exporter produces a valid PDF from a fixture DOCX; running twice with no DOCX change is a no-op.
+- Integration: full docs approve flow takes a `pending_approval` cell (set either by Unit 9's review-view "continue" button or by a direct API call on a `converted` cell) all the way to `published` with a real Jira ticket key and PDF attachment (against a Jira fixture / mock).
+- Partial-failure retry: Jira attach fails on first attempt → cell stays at `approved` (workflow status untouched by the publish work function), `last_run.state=failed`. Second attempt reuses the already-exported PDF (local file exists) and the already-created Jira ticket key (persisted on the cell) and re-tries just the attach.
 
-**Done criteria:** at least one real docs ticket created in dev with a converted PDF attachment.
+**Done criteria:** at least one real docs ticket created in dev with a converted PDF attachment, and the cell's final state is `published`.
 
 ---
 

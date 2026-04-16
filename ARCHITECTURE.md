@@ -469,12 +469,12 @@ SFTP is the first integration. Future integrations (Jira, email, PM tools) follo
 
 **Full design:** [PLAN_DOCS_PIPELINE.md](PLAN_DOCS_PIPELINE.md). Highlights:
 
-- **Source:** Zendesk help center (`cyberjetsupport.zendesk.com`), not SFTP `DOC/` folders. Scraper prototype validated 2026-04-10 — `scripts/test_zendesk_scraper.py` (curl_cffi + legacy `/access/login`).
-- **State model additions:** `not_found` value on `release_notes.status`; new `LastRun` sub-object on both `BinariesState` and `ReleaseNotesState` (workflow status + run status as two orthogonal state machines — section 3 of the plan).
-- **Main scan = three sequential passes:** SFTP discovery → binaries pass → docs pass. Docs pass auto-acts on `not_started` only — `not_found` recovery is via the manual UI button or a future email webhook (never blind cron polling).
-- **Two scan endpoints:** `POST /scan` (main scan, locks against itself), `POST /patches/{id}/release-notes/refetch` (targeted, allowed during a main scan because the per-cell `last_run.state == running` is the lock). Bulk refetch endpoint also planned.
-- **Scan history persisted** to `state/scans/` so the "is a scan running" signal and audit trail are durable.
-- **DOCX → PDF on approval**, attached to the docs Jira ticket as the final step.
+- **Source:** Zendesk help center (`cyberjetsupport.zendesk.com`), not SFTP `DOC/` folders. Scraper validated 2026-04-10, shipped in Unit 3.
+- **State model:** `ReleaseNotesState.status` flow is `not_started → downloaded → extracted → converted → pending_approval → approved → published` (plus `not_found` clean-negative branch). `LastRun` sub-object on both `BinariesState` and `ReleaseNotesState` (workflow status + run status as two orthogonal state machines — section 3 of the plan). `not_found_reason` side field distinguishes `"no_match"` from `"ambiguous_match"` without bloating the Literal.
+- **Main scan = five sequential passes** (after Unit 5): SFTP discovery → binaries download → Zendesk fetch → Claude extract → DOCX render. Docs fetch (pass 3) auto-acts on `not_started` only — `not_found` recovery is via the manual UI button or a future email webhook (never blind cron polling). Extract (pass 4) acts on `downloaded`, render (pass 5) acts on `extracted`. Each pass is idempotent and independently retry-safe thanks to the SHA256-keyed extraction cache + persisted record JSON.
+- **Scan endpoints:** existing `POST /pipeline/scan` is the main scan (Unit 6 adds the 409 Conflict guard). Unit 6 adds `POST /patches/{product_id}/{patch_id}/release-notes/refetch` (targeted, allowed during a main scan because the per-cell `last_run.state == running` is the lock) and `POST /pipeline/scan/release-notes?version=...` (bulk).
+- **Scan history persisted** to `state/scans/<scan_id>.json` (many small files, rotation-friendly). `finished_at IS NULL` is the "main scan running" signal for the 409 guard.
+- **DOCX → PDF on approval**, attached to the docs Jira ticket as the final publish step (Unit 10). Single `approved → published` transition, no intermediate `pdf_exported` state.
 
 ### Phase 2 — PostgreSQL Migration
 **Goal:** Move from JSON files to a proper database for richer data and querying

@@ -117,7 +117,7 @@ Workflow status flow on the docs side: `not_started → downloaded → extracted
   1. Copy a PDF + its images dir into `patches/<product>/<version>/release_notes/`
   2. Copy the matching cached extraction from `docs_example/conversion_prototype/.cache/claude/<hash>.json` to `state/cache/claude/<hash>.json` (the hash filename matches because both keys are SHA256 of the PDF bytes)
   3. Add a patch entry to `state/patches/<product>.json` with `release_notes.status = "downloaded"` and an **absolute** `source_pdf_path`
-  4. Call `run_scan_product(...)` directly (or `POST /scan` via the API) — Pass 4 hits the cache, Pass 5 renders the DOCX. Total cost: $0.
+  4. Call `run_scan_product(...)` directly (or `POST /pipeline/scan` via the API) — Pass 4 hits the cache, Pass 5 renders the DOCX. Total cost: $0.
 
 - **Tests structure.** `backend/tests/test_docs_extract.py` covers `extract_release_notes` in isolation (cache hit, skip, failure, version guard). `backend/tests/test_docs_render.py` covers `render_release_notes` in isolation against the real Flightscape template. `backend/tests/test_orchestrator_docs_pass.py` was extended with `_build_claude_client` tests and a `TestExtractRenderPasses` class covering the multi-scan retry scenarios. The existing Unit 3 fetcher tests were updated to drop the `discovered` intermediate state and add `not_found_reason` assertions.
 
