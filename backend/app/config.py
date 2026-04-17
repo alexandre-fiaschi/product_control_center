@@ -72,5 +72,9 @@ class Settings(BaseSettings):
     def docs_cache_dir(self) -> Path:
         return PROJECT_ROOT / "state" / "cache" / "claude"
 
+    @property
+    def scans_dir(self) -> Path:
+        return PROJECT_ROOT / "state" / "scans"
+
 
 settings = Settings()

@@ -571,28 +571,30 @@ Unit 4 (Block B prototype) is the only one that runs **in parallel** with the re
 
 ---
 
-### Unit 6 — Scan endpoint polish + refetch endpoints + scan history persistence
+### Unit 6 — Scan endpoint polish + refetch endpoints + scan history persistence ✅ DONE (2026-04-17)
 
 **Effort:** Small–Medium.
 **Depends on:** unit 5.
 
-**Scope.** The existing `POST /pipeline/scan` endpoint (shipped in Block 5) already runs the full 5-pass flow. Unit 6 adds three things on top: a 409 guard so two scans can't run simultaneously, two new endpoints for targeted / bulk release-notes refetch (needed because auto-scan never acts on `not_found`), and durable scan history so the 409 guard and future dashboards have something to read. **No UI yet** — endpoints are usable from curl / OpenAPI docs.
+**Scope as built.** Retrofitted `POST /pipeline/scan` and `POST /pipeline/scan/{product_id}` with a 409 Conflict guard backed by a file-per-scan history store. Added two new endpoints for targeted and bulk release-notes refetch (the escape hatch for `not_found` patches that auto-scan deliberately skips — see §4.2) and one helper on the orchestrator that both endpoints share.
 
-**Files:**
-- [backend/app/api/pipeline.py](backend/app/api/pipeline.py) — **retrofit the existing** `POST /pipeline/scan` and `POST /pipeline/scan/{product_id}` endpoints with the 409 Conflict guard (via `is_main_scan_running()`) + call `save_scan_record()` on entry and `finalize_scan_record()` on exit. Do **not** create a new endpoint at `/scan`.
-- [backend/app/api/patches.py](backend/app/api/patches.py) — add two new endpoints: `POST /patches/{product_id}/{patch_id}/release-notes/refetch` (targeted refetch, allowed during a main scan because per-cell lock handles concurrency) and `POST /pipeline/scan/release-notes?version=...` (bulk refetch, calls the targeted helper in a loop). Both reuse the existing `fetch_release_notes` → `extract_release_notes` → `render_release_notes` chain from Unit 5.
-- `backend/app/state/scan_history.py` (new) — `ScanRecord` Pydantic model + `save_scan_record()` / `finalize_scan_record()` / `is_main_scan_running()` / `list_recent_scans()` helpers. Storage: `state/scans/<scan_id>.json` (many small files, rotation-friendly, no need to load history into memory for the running-check — just list the dir and inspect each one's `finished_at`).
-- `backend/app/state/models.py` — add `ScanRecord` model (Literal trigger source, counts dict, timestamps).
+**Files (as built):**
+- [backend/app/state/models.py](backend/app/state/models.py) — added `ScanRecord` (scan_id, trigger Literal, started_at, finished_at, products, counts, duration_ms).
+- [backend/app/state/scan_history.py](backend/app/state/scan_history.py) (new) — `save_scan_record` / `finalize_scan_record` / `is_main_scan_running` / `list_recent_scans` / `load_scan_record` helpers. Atomic write mirrors `state/manager.py` (fcntl + `.tmp` + `os.replace`). Each helper accepts an optional `scans_dir=` arg for test isolation, same pattern as `load_tracker(state_dir=...)`.
+- [backend/app/config.py](backend/app/config.py) — added `scans_dir` property (`PROJECT_ROOT / "state" / "scans"`).
+- [backend/app/services/orchestrator.py](backend/app/services/orchestrator.py) — added `refetch_release_notes(product_id, patch_id)` helper that runs Pass 3 → Pass 4 → Pass 5 on a single cell with save-after-each-pass for partial-failure visibility. Returns an outcome dict (`{converted, downloaded, not_found, extract_skipped, not_eligible, already_running, failed}`).
+- [backend/app/api/pipeline.py](backend/app/api/pipeline.py) — retrofitted scan endpoints with `_run_main_scan()` wrapper (409 guard + scan record + `_aggregate_counts()` summing the 11 existing orchestrator counters + `product_errors`). Added `POST /pipeline/scan/release-notes?version=<prefix>` bulk endpoint. **Note:** bulk endpoint must be declared before `/pipeline/scan/{product_id}` or FastAPI routes `"release-notes"` into the product-id path.
+- [backend/app/api/patches.py](backend/app/api/patches.py) — added `POST /patches/{product_id}/{patch_id}/release-notes/refetch` (targeted). 404 for unknown patch, 409 for not-eligible workflow status, 200 with `outcome="already_running"` for per-cell lock collisions (not 409 — could be the legitimate main scan). Persists a `trigger="targeted"` scan record whose counts bucket records the final outcome.
 
-**Tests.**
-- `POST /pipeline/scan` starts a main scan, writes a ScanRecord with `finished_at: null`, second immediate call returns 409 Conflict.
-- After the first scan completes (`finished_at` populated), a subsequent `POST /pipeline/scan` runs normally.
-- `POST /patches/{product_id}/{patch_id}/release-notes/refetch` is allowed during a main scan; if the specific cell's `last_run.state == "running"`, returns a clear "already in progress" response (not 409 — the main scan might be the thing running it).
-- Bulk endpoint loops correctly, reports per-cell outcomes, and respects the same per-cell lock.
-- `is_main_scan_running()` returns `True` while any scan record has no `finished_at`, `False` after all are finalized.
-- Scan record counts match what `run_scan()` actually did (patches_total, binaries_new, notes_downloaded, notes_extracted, notes_rendered, etc.).
+**Locking asymmetry (§4.1 in practice).** `is_main_scan_running()` only inspects records whose trigger is in `{"cron", "manual"}`. Records with trigger `"targeted"` or `"bulk_docs"` never block a main scan because the per-cell lock (`last_run.state == "running"`) already guarantees no two triggers work on the same cell. Verified end-to-end by planting a fake `targeted` in-flight record and confirming `POST /pipeline/scan` did **not** return 409.
 
-**Done criteria:** existing scan endpoint exercises unchanged behavior except for the 409 guard; two new endpoints visible in `/docs` Swagger; scan records appear in `state/scans/` after each scan.
+**Tests (25 new, 276 total passing):**
+- `backend/tests/test_scan_history.py` (new, 13 tests) — save/load roundtrip, creates dir on first write, finalize sets fields, finalize-missing is a no-op, 6 cases for `is_main_scan_running` (empty dir / manual blocks / cron blocks / finalized-doesn't-block / targeted-doesn't-block / bulk-doesn't-block / missing dir), `list_recent_scans` sorts + limit + missing dir.
+- `backend/tests/test_api_pipeline.py` — extended with 409-guard test, finalize-on-exception test, `TestBulkRefetch` class (version-prefix filter, outcome aggregation, not-blocked-by-main-scan).
+- `backend/tests/test_api_patches.py` — added `TestRefetchReleaseNotes` class (success, 409 not-eligible, 200 already-running, 404 unknown patch, 200 not-found outcome).
+- `backend/tests/conftest.py` — added `tmp_scans_dir` fixture.
+
+**Smoke test verdict (2026-04-17):** ✅ PASS. Full end-to-end on the real FastAPI server with `docs.enabled=false`, no external calls. Verified: 4 endpoints in OpenAPI, scan record persists + finalizes even when SFTP raises, 409 guard fires on planted `manual` in-flight record, `targeted` in-flight does NOT block main scan (asymmetry), targeted refetch returns 404/409/200-already_running/200-failed(zendesk_unavailable) for each edge case, bulk refetch unfiltered = 34 candidates, `?version=8.1` narrows to 23 (ACARS_V8_1 only), all 7 scan records finalized.
 
 ---
 

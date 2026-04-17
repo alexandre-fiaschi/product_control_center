@@ -257,8 +257,9 @@ not_started → discovered → downloaded → converted → pending_approval →
 ### Scan & Discovery
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/pipeline/scan` | Scan all products: discover → download → convert docs → pending_approval |
-| POST | `/api/pipeline/scan/{product_id}` | Same but single product |
+| POST | `/api/pipeline/scan` | Main scan all products (5 passes: SFTP → binaries → docs fetch → extract → render). Returns 409 if another main scan is in flight. |
+| POST | `/api/pipeline/scan/{product_id}` | Same but single product. Same 409 guard. |
+| POST | `/api/pipeline/scan/release-notes?version=<prefix>` | Bulk release-notes refetch — loops eligible patches (status ∈ {`not_started`, `not_found`}) whose `patch_id` starts with `<prefix>`. Not blocked by main-scan 409; per-cell lock prevents double work. Trigger: `bulk_docs`. |
 
 ### Products
 | Method | Endpoint | Description |
@@ -278,13 +279,14 @@ not_started → discovered → downloaded → converted → pending_approval →
 |--------|----------|-------------|
 | POST | `/api/patches/{product_id}/{patch_id}/binaries/approve` | With Jira fields → full flow (zip → Jira → publish). Empty body → mark published (skip Jira) |
 | POST | `/api/patches/{product_id}/{patch_id}/docs/approve` | With Jira fields → full flow (PDF → Jira → publish). Empty body → mark published (skip Jira) |
+| POST | `/api/patches/{product_id}/{patch_id}/release-notes/refetch` | Targeted refetch of one patch's release notes. Eligible when `release_notes.status ∈ {not_started, not_found}`. 404 if patch missing, 409 if status ineligible, 200 with `outcome=already_running` if per-cell lock held. Trigger: `targeted`. |
 
 ### Dashboard
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/dashboard/summary` | Counts by status for both pipelines across all products |
 
-**10 endpoints total.** Scan auto-downloads and auto-converts. Approve with payload → creates Jira ticket. Approve with empty body → marks as published directly (for backlog patches already on the portal).
+**12 endpoints total** (10 original + 2 added in Unit 6). Scan auto-downloads and auto-converts. Main-scan endpoints persist a `ScanRecord` to `state/scans/<scan_id>.json` and use it for the 409 concurrency guard. Refetch endpoints are the recovery path for `not_found` release notes (auto-scan deliberately skips `not_found` — see [PLAN_DOCS_PIPELINE.md §4.2](PLAN_DOCS_PIPELINE.md)). Approve with payload → creates Jira ticket. Approve with empty body → marks as published directly (for backlog patches already on the portal).
 
 ---
 
@@ -459,7 +461,7 @@ SFTP is the first integration. Future integrations (Jira, email, PM tools) follo
 - ✅ JSON state files on disk (no database)
 - ✅ SFTP integration (paramiko connector + scanner)
 - ✅ Binaries pipeline (fetch + verify)
-- ✅ Manual approval workflow via API (10 endpoints, 121 tests)
+- ✅ Manual approval workflow via API (12 endpoints after Unit 6; 276 tests passing)
 - ✅ React + Vite dashboard — F1–F5 complete (F6 testing deferred — see [PLAN_FRONTEND_TESTING.md](PLAN_FRONTEND_TESTING.md))
 - ⬜ Docker Compose (backend + frontend, no DB)
 - ✅ Docs pipeline stubbed
@@ -472,8 +474,8 @@ SFTP is the first integration. Future integrations (Jira, email, PM tools) follo
 - **Source:** Zendesk help center (`cyberjetsupport.zendesk.com`), not SFTP `DOC/` folders. Scraper validated 2026-04-10, shipped in Unit 3.
 - **State model:** `ReleaseNotesState.status` flow is `not_started → downloaded → extracted → converted → pending_approval → approved → published` (plus `not_found` clean-negative branch). `LastRun` sub-object on both `BinariesState` and `ReleaseNotesState` (workflow status + run status as two orthogonal state machines — section 3 of the plan). `not_found_reason` side field distinguishes `"no_match"` from `"ambiguous_match"` without bloating the Literal.
 - **Main scan = five sequential passes** (after Unit 5): SFTP discovery → binaries download → Zendesk fetch → Claude extract → DOCX render. Docs fetch (pass 3) auto-acts on `not_started` only — `not_found` recovery is via the manual UI button or a future email webhook (never blind cron polling). Extract (pass 4) acts on `downloaded`, render (pass 5) acts on `extracted`. Each pass is idempotent and independently retry-safe thanks to the SHA256-keyed extraction cache + persisted record JSON.
-- **Scan endpoints:** existing `POST /pipeline/scan` is the main scan (Unit 6 adds the 409 Conflict guard). Unit 6 adds `POST /patches/{product_id}/{patch_id}/release-notes/refetch` (targeted, allowed during a main scan because the per-cell `last_run.state == running` is the lock) and `POST /pipeline/scan/release-notes?version=...` (bulk).
-- **Scan history persisted** to `state/scans/<scan_id>.json` (many small files, rotation-friendly). `finished_at IS NULL` is the "main scan running" signal for the 409 guard.
+- **Scan endpoints:** `POST /pipeline/scan` is the main scan (409 Conflict guard shipped in Unit 6). `POST /patches/{product_id}/{patch_id}/release-notes/refetch` is the targeted refetch (allowed during a main scan because the per-cell `last_run.state == running` is the lock) and `POST /pipeline/scan/release-notes?version=...` is the bulk variant. Both shipped in Unit 6.
+- **Scan history persisted** to `state/scans/<scan_id>.json` (many small files, rotation-friendly). `finished_at IS NULL` with trigger in `{manual, cron}` is the "main scan running" signal for the 409 guard; `targeted` and `bulk_docs` triggers don't block main scans.
 - **DOCX → PDF on approval**, attached to the docs Jira ticket as the final publish step (Unit 10). Single `approved → published` transition, no intermediate `pdf_exported` state.
 
 ### Phase 2 — PostgreSQL Migration

@@ -61,3 +61,13 @@ class ProductTracker(BaseModel):
     product_id: str
     last_scanned_at: datetime | None = None
     versions: dict[str, VersionData] = {}
+
+
+class ScanRecord(BaseModel):
+    scan_id: str
+    trigger: Literal["cron", "manual", "targeted", "bulk_docs"]
+    started_at: datetime
+    finished_at: datetime | None = None
+    products: list[str] = []
+    counts: dict[str, int] = {}
+    duration_ms: int | None = None

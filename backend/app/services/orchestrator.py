@@ -13,6 +13,7 @@ from app.pipelines.binaries.fetcher import download_patch
 from app.pipelines.docs.converter import extract_release_notes, render_release_notes
 from app.pipelines.docs.fetcher import fetch_release_notes
 from app.services.lifecycle import run_cell
+from app.services.patch_service import find_patch
 from app.state.manager import load_tracker, save_tracker
 
 logger = logging.getLogger("services.orchestrator")
@@ -304,3 +305,207 @@ def run_scan_product(
         "notes_rendered": notes_rendered,
         "notes_render_failed": notes_render_failed,
     }
+
+
+REFETCH_ELIGIBLE_STATUSES = {"not_started", "not_found"}
+
+
+def refetch_release_notes(product_id: str, patch_id: str) -> dict[str, Any]:
+    """Targeted / bulk refetch of a single patch's release notes.
+
+    Runs Pass 3 (fetch) and — if the fetch advanced to `downloaded` —
+    Pass 4 (extract) and Pass 5 (render). Reuses the exact per-cell lambdas
+    and lifecycle helper as the main scan, so behavior stays identical to
+    what the orchestrator's passes would do on the same patch.
+
+    Returns an outcome dict consumed by the API layer. Raises
+    PatchNotFoundError if the patch doesn't exist.
+    """
+    tracker, version, patch = find_patch(product_id, patch_id)
+
+    # Eligibility: workflow-status check + per-cell lock check.
+    if patch.release_notes.last_run.state == "running":
+        logger.info(
+            "scan.refetch.locked product=%s version=%s", product_id, patch_id
+        )
+        return {
+            "outcome": "already_running",
+            "product_id": product_id,
+            "patch_id": patch_id,
+            "release_notes_status": patch.release_notes.status,
+            "last_run": patch.release_notes.last_run.model_dump(mode="json"),
+        }
+    if patch.release_notes.status not in REFETCH_ELIGIBLE_STATUSES:
+        logger.info(
+            "scan.refetch.ineligible product=%s version=%s current_status=%s",
+            product_id, patch_id, patch.release_notes.status,
+        )
+        return {
+            "outcome": "not_eligible",
+            "product_id": product_id,
+            "patch_id": patch_id,
+            "release_notes_status": patch.release_notes.status,
+            "last_run": patch.release_notes.last_run.model_dump(mode="json"),
+        }
+
+    logger.info(
+        "scan.refetch.start product=%s version=%s current_status=%s",
+        product_id, patch_id, patch.release_notes.status,
+    )
+
+    zendesk_client = _build_zendesk_client()
+    claude_client = _build_claude_client()
+
+    try:
+        # Pass 3: fetch from Zendesk
+        if zendesk_client is None:
+            # Can't fetch — feature flag off or creds missing. Treat as a
+            # failure so the caller sees a clear signal rather than a
+            # silent no-op.
+            logger.warning(
+                "scan.refetch.no_zendesk product=%s version=%s", product_id, patch_id
+            )
+            return {
+                "outcome": "failed",
+                "product_id": product_id,
+                "patch_id": patch_id,
+                "release_notes_status": patch.release_notes.status,
+                "last_run": patch.release_notes.last_run.model_dump(mode="json"),
+                "error": "zendesk_unavailable",
+            }
+
+        fetch_ok = run_cell(
+            patch.release_notes,
+            lambda: fetch_release_notes(
+                zendesk_client,
+                patch,
+                product_id=product_id,
+                version=version,
+                dest_dir=settings.patches_dir / product_id / version / "release_notes",
+            ),
+            step_name="fetch_release_notes",
+            product=product_id,
+            version=patch_id,
+        )
+        save_tracker(tracker)
+
+        if not fetch_ok:
+            outcome = "failed" if patch.release_notes.last_run.state == "failed" else "already_running"
+            logger.info(
+                "scan.refetch.finished product=%s version=%s outcome=%s",
+                product_id, patch_id, outcome,
+            )
+            return {
+                "outcome": outcome,
+                "product_id": product_id,
+                "patch_id": patch_id,
+                "release_notes_status": patch.release_notes.status,
+                "last_run": patch.release_notes.last_run.model_dump(mode="json"),
+            }
+
+        if patch.release_notes.status == "not_found":
+            logger.info(
+                "scan.refetch.finished product=%s version=%s outcome=not_found",
+                product_id, patch_id,
+            )
+            return {
+                "outcome": "not_found",
+                "product_id": product_id,
+                "patch_id": patch_id,
+                "release_notes_status": "not_found",
+                "last_run": patch.release_notes.last_run.model_dump(mode="json"),
+            }
+
+        # Pass 4: extract (only if now "downloaded")
+        if patch.release_notes.status == "downloaded":
+            result_holder: dict[str, Any] = {"value": None}
+
+            def extract_work():
+                result_holder["value"] = extract_release_notes(
+                    patch,
+                    product_id=product_id,
+                    version=version,
+                    claude_client=claude_client,
+                )
+
+            extract_ok = run_cell(
+                patch.release_notes,
+                extract_work,
+                step_name="extract",
+                product=product_id,
+                version=patch_id,
+            )
+            save_tracker(tracker)
+
+            if not extract_ok:
+                outcome = "failed" if patch.release_notes.last_run.state == "failed" else "already_running"
+                logger.info(
+                    "scan.refetch.finished product=%s version=%s outcome=%s step=extract",
+                    product_id, patch_id, outcome,
+                )
+                return {
+                    "outcome": outcome,
+                    "product_id": product_id,
+                    "patch_id": patch_id,
+                    "release_notes_status": patch.release_notes.status,
+                    "last_run": patch.release_notes.last_run.model_dump(mode="json"),
+                }
+
+            # Skip render if extract was a clean no-api skip.
+            if result_holder["value"] != "extracted":
+                logger.info(
+                    "scan.refetch.finished product=%s version=%s outcome=extract_skipped",
+                    product_id, patch_id,
+                )
+                return {
+                    "outcome": "extract_skipped",
+                    "product_id": product_id,
+                    "patch_id": patch_id,
+                    "release_notes_status": patch.release_notes.status,
+                    "last_run": patch.release_notes.last_run.model_dump(mode="json"),
+                }
+
+        # Pass 5: render
+        if patch.release_notes.status == "extracted":
+            render_ok = run_cell(
+                patch.release_notes,
+                lambda: render_release_notes(
+                    patch,
+                    product_id=product_id,
+                    version=version,
+                    template_path=settings.docs_template_path,
+                ),
+                step_name="render",
+                product=product_id,
+                version=patch_id,
+            )
+            save_tracker(tracker)
+
+            if not render_ok:
+                outcome = "failed" if patch.release_notes.last_run.state == "failed" else "already_running"
+                logger.info(
+                    "scan.refetch.finished product=%s version=%s outcome=%s step=render",
+                    product_id, patch_id, outcome,
+                )
+                return {
+                    "outcome": outcome,
+                    "product_id": product_id,
+                    "patch_id": patch_id,
+                    "release_notes_status": patch.release_notes.status,
+                    "last_run": patch.release_notes.last_run.model_dump(mode="json"),
+                }
+
+        logger.info(
+            "scan.refetch.finished product=%s version=%s outcome=converted status=%s",
+            product_id, patch_id, patch.release_notes.status,
+        )
+        return {
+            "outcome": "converted",
+            "product_id": product_id,
+            "patch_id": patch_id,
+            "release_notes_status": patch.release_notes.status,
+            "last_run": patch.release_notes.last_run.model_dump(mode="json"),
+        }
+    finally:
+        if zendesk_client is not None:
+            zendesk_client.close()

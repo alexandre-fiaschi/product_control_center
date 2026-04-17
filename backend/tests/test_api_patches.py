@@ -190,3 +190,103 @@ class TestApproveDocs:
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "skipped"
+
+
+class TestRefetchReleaseNotes:
+    @patch("app.api.patches.finalize_scan_record")
+    @patch("app.api.patches.save_scan_record")
+    @patch("app.api.patches.refetch_release_notes")
+    def test_refetch_success(self, mock_refetch, mock_save, mock_fin, client):
+        mock_refetch.return_value = {
+            "outcome": "converted",
+            "product_id": "ACARS_V8_1",
+            "patch_id": "8.1.0.0",
+            "release_notes_status": "converted",
+            "last_run": {"state": "success"},
+        }
+        resp = client.post(
+            "/api/patches/ACARS_V8_1/8.1.0.0/release-notes/refetch"
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["outcome"] == "converted"
+        assert data["release_notes_status"] == "converted"
+        assert "scan_id" in data
+
+        saved_record = mock_save.call_args.args[0]
+        assert saved_record.trigger == "targeted"
+        assert mock_fin.call_count == 1
+
+    @patch("app.api.patches.finalize_scan_record")
+    @patch("app.api.patches.save_scan_record")
+    @patch("app.api.patches.refetch_release_notes")
+    def test_refetch_not_eligible_returns_409(
+        self, mock_refetch, mock_save, mock_fin, client
+    ):
+        mock_refetch.return_value = {
+            "outcome": "not_eligible",
+            "product_id": "ACARS_V8_1",
+            "patch_id": "8.1.0.0",
+            "release_notes_status": "pending_approval",
+            "last_run": {"state": "success"},
+        }
+        resp = client.post(
+            "/api/patches/ACARS_V8_1/8.1.0.0/release-notes/refetch"
+        )
+        assert resp.status_code == 409
+        assert resp.json()["detail"]["current_status"] == "pending_approval"
+
+    @patch("app.api.patches.finalize_scan_record")
+    @patch("app.api.patches.save_scan_record")
+    @patch("app.api.patches.refetch_release_notes")
+    def test_refetch_already_running_returns_200(
+        self, mock_refetch, mock_save, mock_fin, client
+    ):
+        # Per-cell lock — return 200 with outcome=already_running (could be
+        # the main scan legitimately processing this cell).
+        mock_refetch.return_value = {
+            "outcome": "already_running",
+            "product_id": "ACARS_V8_1",
+            "patch_id": "8.1.0.0",
+            "release_notes_status": "not_started",
+            "last_run": {"state": "running"},
+        }
+        resp = client.post(
+            "/api/patches/ACARS_V8_1/8.1.0.0/release-notes/refetch"
+        )
+        assert resp.status_code == 200
+        assert resp.json()["outcome"] == "already_running"
+
+    @patch("app.api.patches.finalize_scan_record")
+    @patch("app.api.patches.save_scan_record")
+    @patch("app.api.patches.refetch_release_notes")
+    def test_refetch_patch_not_found_returns_404(
+        self, mock_refetch, mock_save, mock_fin, client
+    ):
+        mock_refetch.side_effect = PatchNotFoundError("nope")
+        resp = client.post(
+            "/api/patches/ACARS_V8_1/NOPE/release-notes/refetch"
+        )
+        assert resp.status_code == 404
+        # Record was still finalized.
+        assert mock_fin.call_count == 1
+
+    @patch("app.api.patches.finalize_scan_record")
+    @patch("app.api.patches.save_scan_record")
+    @patch("app.api.patches.refetch_release_notes")
+    def test_refetch_not_found_outcome(
+        self, mock_refetch, mock_save, mock_fin, client
+    ):
+        # Zendesk looked and there's no article — clean-negative, 200.
+        mock_refetch.return_value = {
+            "outcome": "not_found",
+            "product_id": "ACARS_V8_1",
+            "patch_id": "8.1.0.0",
+            "release_notes_status": "not_found",
+            "last_run": {"state": "success"},
+        }
+        resp = client.post(
+            "/api/patches/ACARS_V8_1/8.1.0.0/release-notes/refetch"
+        )
+        assert resp.status_code == 200
+        assert resp.json()["outcome"] == "not_found"

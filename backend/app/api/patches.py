@@ -1,14 +1,24 @@
 """Patch list, detail, and approval endpoints."""
 
 import logging
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
 from app.config import settings
-from app.services.patch_service import approve_binaries, approve_docs, find_patch
+from app.services.orchestrator import refetch_release_notes
+from app.services.patch_service import (
+    PatchNotFoundError,
+    approve_binaries,
+    approve_docs,
+    find_patch,
+)
 from app.state.manager import load_tracker
+from app.state.models import ScanRecord
+from app.state.scan_history import finalize_scan_record, save_scan_record
 
 logger = logging.getLogger("api.patches")
 router = APIRouter(prefix="/api")
@@ -153,6 +163,58 @@ def approve_binaries_endpoint(
         "jira_ticket_key": result["jira"]["key"] if result.get("jira") else None,
         "jira_ticket_url": result["jira"]["url"] if result.get("jira") else None,
     }
+
+
+@router.post("/patches/{product_id}/{patch_id}/release-notes/refetch")
+def refetch_release_notes_endpoint(
+    product_id: str, patch_id: str
+) -> dict[str, Any]:
+    """Targeted refetch of release notes for a single patch.
+
+    Eligible when release_notes.status ∈ {not_started, not_found} and the
+    per-cell lock is free. Runs Pass 3/4/5 (fetch + extract + render) as a
+    single operation. Allowed during a main scan — the per-cell lock is the
+    only concurrency barrier.
+    """
+    scan_id = uuid.uuid4().hex
+    started_at = datetime.now(timezone.utc)
+    record = ScanRecord(
+        scan_id=scan_id,
+        trigger="targeted",
+        started_at=started_at,
+        products=[product_id],
+    )
+    save_scan_record(record)
+
+    outcome_for_counts = "error"
+    try:
+        try:
+            result = refetch_release_notes(product_id, patch_id)
+        except PatchNotFoundError as exc:
+            outcome_for_counts = "patch_not_found"
+            raise HTTPException(status_code=404, detail=str(exc))
+        outcome_for_counts = result.get("outcome", "error")
+    finally:
+        duration_ms = int(
+            (datetime.now(timezone.utc) - started_at).total_seconds() * 1000
+        )
+        finalize_scan_record(
+            scan_id,
+            counts={f"outcome_{outcome_for_counts}": 1},
+            duration_ms=duration_ms,
+        )
+
+    if result["outcome"] == "not_eligible":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "not eligible",
+                "current_status": result.get("release_notes_status"),
+            },
+        )
+
+    result["scan_id"] = scan_id
+    return result
 
 
 @router.post("/patches/{product_id}/{patch_id}/docs/approve")

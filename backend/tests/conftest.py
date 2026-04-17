@@ -126,6 +126,13 @@ def tmp_release_notes_dir(tmp_path):
 
 
 @pytest.fixture
+def tmp_scans_dir(tmp_path):
+    d = tmp_path / "state" / "scans"
+    d.mkdir(parents=True)
+    return d
+
+
+@pytest.fixture
 def sample_release_note_item():
     return ReleaseNoteItem(
         section="New Features",

@@ -1,9 +1,9 @@
 # Implementation Handoff
 
-**Date:** 2026-04-08 (last updated 2026-04-15)
+**Date:** 2026-04-08 (last updated 2026-04-17)
 **Author:** Alexandre Fiaschi (assisted by Claude Code)
 
-**Status:** Backend complete (5 blocks, 121 tests). Frontend complete F1–F5 (F6 testing deferred). Docs pipeline: **Units 0–5 done**. Unit 4 verdict is **go** on the Claude-extraction path (Unit 4.5). Unit 5 wires `extract_release_notes` and `render_release_notes` into the orchestrator as Pass 4 + Pass 5, advancing patches `downloaded → extracted → converted` automatically. 251 backend tests passing. Design in [PLAN_DOCS_PIPELINE.md](PLAN_DOCS_PIPELINE.md). Next up is Unit 6 (API endpoints + scan history).
+**Status:** Backend complete (5 blocks, 121 tests). Frontend complete F1–F5 (F6 testing deferred). Docs pipeline: **Units 0–6 done**. Unit 4 verdict is **go** on the Claude-extraction path (Unit 4.5). Unit 5 wires `extract_release_notes` and `render_release_notes` into the orchestrator as Pass 4 + Pass 5. Unit 6 adds a 409 guard on `POST /pipeline/scan`, durable scan history under `state/scans/`, and two new refetch endpoints (targeted + bulk) for recovering from `not_found` release notes. 276 backend tests passing. Design in [PLAN_DOCS_PIPELINE.md](PLAN_DOCS_PIPELINE.md). Next up is Unit 7 (file serving endpoints for the Unit 9 review view).
 
 ---
 
@@ -120,6 +120,30 @@ Workflow status flow on the docs side: `not_started → downloaded → extracted
   4. Call `run_scan_product(...)` directly (or `POST /pipeline/scan` via the API) — Pass 4 hits the cache, Pass 5 renders the DOCX. Total cost: $0.
 
 - **Tests structure.** `backend/tests/test_docs_extract.py` covers `extract_release_notes` in isolation (cache hit, skip, failure, version guard). `backend/tests/test_docs_render.py` covers `render_release_notes` in isolation against the real Flightscape template. `backend/tests/test_orchestrator_docs_pass.py` was extended with `_build_claude_client` tests and a `TestExtractRenderPasses` class covering the multi-scan retry scenarios. The existing Unit 3 fetcher tests were updated to drop the `discovered` intermediate state and add `not_found_reason` assertions.
+
+---
+
+## Scan History + Refetch Gotchas (Unit 6)
+
+Unit 6 adds durable scan history and two refetch endpoints. The machinery is small but a few things are easy to mis-reason about:
+
+- **Two kinds of scan — different concurrency rules.** `is_main_scan_running()` only considers records whose trigger is in `{"cron", "manual"}`. A `targeted` or `bulk_docs` record with `finished_at: null` does NOT return True. This is deliberate: main scans are mutually exclusive (two of them would stomp each other's state writes), but targeted/bulk refetches ride on the per-cell lock (`last_run.state == "running"`) which is fine-grained enough that a main scan and a refetch can coexist without double-working any cell. If you change this, re-read PLAN_DOCS_PIPELINE.md §4.1 before committing.
+
+- **FastAPI route order matters for `/pipeline/scan/release-notes`.** The bulk refetch endpoint must be declared before `/pipeline/scan/{product_id}` or FastAPI happily routes `"release-notes"` into the `{product_id}` path param and returns 404 ("Product release-notes not found"). There's a comment on the endpoint pinning this so future edits don't silently break it.
+
+- **`refetch_release_notes` saves after EACH pass, not just at the end.** If the process dies mid-refetch (SIGKILL, crash), the tracker reflects the last successful pass. That matters because a refetch is three sequential passes (fetch → extract → render) and the render pass can take seconds to minutes. Matches the "partial success is visible" principle from the main scan.
+
+- **Refetch returns `outcome`, the endpoint decides the HTTP status.** The orchestrator helper is HTTP-agnostic — it returns `{outcome: "converted"|"downloaded"|"not_found"|"extract_skipped"|"not_eligible"|"already_running"|"failed", ...}`. The endpoint layer maps: `not_eligible → 409`, `patch not found → 404`, everything else → 200 (including `failed` and `already_running`). This keeps the helper reusable from the bulk loop and any future webhook entry point without HTTP leaking into it.
+
+- **Stale in-flight records block forever.** If the backend crashes mid-scan, the scan record stays with `finished_at: null` and every subsequent `POST /pipeline/scan` returns 409. Recovery today is manual: delete the stale file from `state/scans/`. A proper watchdog (pid check, or ignore-if-older-than-1-hour) is a v2 concern. When it bites you, `ls -lt state/scans/ | head` and remove anything that's hours old with `finished_at: null`.
+
+- **Counters on the ScanRecord use the exact orchestrator counter names.** `_aggregate_counts()` sums 11 keys from the per-product dicts (`new_patches`, `downloaded`, `failed`, `notes_downloaded`, `notes_not_found`, `notes_failed`, `notes_extracted`, `notes_extract_skipped`, `notes_extract_failed`, `notes_rendered`, `notes_render_failed`) plus a derived `product_errors`. Adding a new counter to `run_scan_product()` means also adding it to `_SCAN_COUNTER_KEYS` in `api/pipeline.py`, otherwise it silently drops out of scan history.
+
+- **`scans_dir=` kwarg on every helper, same as `load_tracker(state_dir=...)`.** Needed so tests can isolate via `tmp_path` without monkeypatching `settings.scans_dir` (which is a `@property` and not straightforward to patch). Production code calls them without the kwarg, which defaults to `settings.scans_dir = state/scans/`. Follow this pattern when adding new helpers that touch filesystem state.
+
+- **Targeted refetch with `docs.enabled=false` returns `outcome="failed", error="zendesk_unavailable"`, NOT 500.** The helper detects the missing Zendesk client up front and short-circuits with a clean response. The endpoint still writes a scan record so there's an audit trail. Only genuine exceptions (network, auth, parsing) bubble up to the lifecycle helper as `last_run.state=failed`.
+
+- **Smoke test recipe (no external APIs):** start the server with `docs.enabled=false`, curl the endpoints, inspect `state/scans/`. The 409 guard, route registration, scan-record persistence, finalization-on-exception, eligibility checks (200/404/409), bulk version-prefix filter, and the locking asymmetry all exercise without calling Zendesk / Claude / Jira. Details in the 2026-04-17 smoke test log in [PLAN_DOCS_PIPELINE.md Unit 6](PLAN_DOCS_PIPELINE.md).
 
 ---
 
