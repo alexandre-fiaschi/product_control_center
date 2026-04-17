@@ -281,12 +281,18 @@ not_started → discovered → downloaded → converted → pending_approval →
 | POST | `/api/patches/{product_id}/{patch_id}/docs/approve` | With Jira fields → full flow (PDF → Jira → publish). Empty body → mark published (skip Jira) |
 | POST | `/api/patches/{product_id}/{patch_id}/release-notes/refetch` | Targeted refetch of one patch's release notes. Eligible when `release_notes.status ∈ {not_started, not_found}`. 404 if patch missing, 409 if status ineligible, 200 with `outcome=already_running` if per-cell lock held. Trigger: `targeted`. |
 
+### Release Notes Files
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/patches/{product_id}/{patch_id}/release-notes/source.pdf` | Stream the Zendesk-fetched source PDF (`release_notes.source_pdf_path`). 404 if patch missing, path unset, or file gone from disk. `Content-Disposition: attachment; filename="{patch_id}-release-notes.pdf"`. |
+| GET | `/api/patches/{product_id}/{patch_id}/release-notes/draft.docx` | Stream the generated DOCX (`release_notes.generated_docx_path`). Same 404 cases. Correct OOXML MIME + `Content-Disposition` filename. |
+
 ### Dashboard
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/dashboard/summary` | Counts by status for both pipelines across all products |
 
-**12 endpoints total** (10 original + 2 added in Unit 6). Scan auto-downloads and auto-converts. Main-scan endpoints persist a `ScanRecord` to `state/scans/<scan_id>.json` and use it for the 409 concurrency guard. Refetch endpoints are the recovery path for `not_found` release notes (auto-scan deliberately skips `not_found` — see [PLAN_DOCS_PIPELINE.md §4.2](PLAN_DOCS_PIPELINE.md)). Approve with payload → creates Jira ticket. Approve with empty body → marks as published directly (for backlog patches already on the portal).
+**14 endpoints total** (10 original + 2 in Unit 6 + 2 in Unit 7). Scan auto-downloads and auto-converts. Main-scan endpoints persist a `ScanRecord` to `state/scans/<scan_id>.json` and use it for the 409 concurrency guard. Refetch endpoints are the recovery path for `not_found` release notes (auto-scan deliberately skips `not_found` — see [PLAN_DOCS_PIPELINE.md §4.2](PLAN_DOCS_PIPELINE.md)). Approve with payload → creates Jira ticket. Approve with empty body → marks as published directly (for backlog patches already on the portal). File-serving endpoints are consumed by Unit 9's review view.
 
 ---
 
@@ -461,7 +467,7 @@ SFTP is the first integration. Future integrations (Jira, email, PM tools) follo
 - ✅ JSON state files on disk (no database)
 - ✅ SFTP integration (paramiko connector + scanner)
 - ✅ Binaries pipeline (fetch + verify)
-- ✅ Manual approval workflow via API (12 endpoints after Unit 6; 276 tests passing)
+- ✅ Manual approval workflow via API (14 endpoints after Unit 7; 284 tests passing)
 - ✅ React + Vite dashboard — F1–F5 complete (F6 testing deferred — see [PLAN_FRONTEND_TESTING.md](PLAN_FRONTEND_TESTING.md))
 - ⬜ Docker Compose (backend + frontend, no DB)
 - ✅ Docs pipeline stubbed

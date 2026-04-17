@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import FileResponse
 
 from app.config import settings
 from app.services.orchestrator import refetch_release_notes
@@ -215,6 +216,50 @@ def refetch_release_notes_endpoint(
 
     result["scan_id"] = scan_id
     return result
+
+
+@router.get("/patches/{product_id}/{patch_id}/release-notes/source.pdf")
+def get_release_notes_source_pdf(product_id: str, patch_id: str) -> FileResponse:
+    try:
+        _tracker, _version_key, patch = find_patch(product_id, patch_id)
+    except PatchNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    path_str = patch.release_notes.source_pdf_path
+    if not path_str:
+        raise HTTPException(status_code=404, detail="Source PDF not available for this patch")
+
+    path = Path(path_str)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="File not found on disk")
+
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        filename=f"{patch_id}-release-notes.pdf",
+    )
+
+
+@router.get("/patches/{product_id}/{patch_id}/release-notes/draft.docx")
+def get_release_notes_draft_docx(product_id: str, patch_id: str) -> FileResponse:
+    try:
+        _tracker, _version_key, patch = find_patch(product_id, patch_id)
+    except PatchNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    path_str = patch.release_notes.generated_docx_path
+    if not path_str:
+        raise HTTPException(status_code=404, detail="Generated DOCX not available for this patch")
+
+    path = Path(path_str)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="File not found on disk")
+
+    return FileResponse(
+        path,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename=f"{patch_id}-release-notes.docx",
+    )
 
 
 @router.post("/patches/{product_id}/{patch_id}/docs/approve")

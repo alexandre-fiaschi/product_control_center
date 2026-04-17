@@ -598,22 +598,23 @@ Unit 4 (Block B prototype) is the only one that runs **in parallel** with the re
 
 ---
 
-### Unit 7 — File serving endpoints
+### Unit 7 — File serving endpoints ✅ DONE (2026-04-17)
 
 **Effort:** Small.
 **Depends on:** unit 5.
 
-**Scope.** Serve the source PDF and generated DOCX for a given patch's release notes. Needed by unit 9's review view. Tiny but isolated so it can ship independently.
+**Scope as built.** Two `GET` endpoints on [backend/app/api/patches.py](backend/app/api/patches.py) that stream the release-notes artifacts for a given patch. Needed by unit 9's review view (source PDF on the left panel, DOCX-rendered-as-PDF on the right). No changes to state, services, or pipelines.
 
-**Files:**
-- `backend/app/api/patches.py` (existing) — `GET /patches/{id}/release-notes/source.pdf` and `GET /patches/{id}/release-notes/draft.docx`. Both return the file with correct `Content-Type`. 404 if the file doesn't exist on disk.
+**Files (as built):**
+- [backend/app/api/patches.py](backend/app/api/patches.py) — added `GET /patches/{product_id}/{patch_id}/release-notes/source.pdf` and `GET /patches/{product_id}/{patch_id}/release-notes/draft.docx`. Each handler resolves the patch via `find_patch()`, then applies three distinct 404 checks: (1) `PatchNotFoundError`, (2) the path field on `ReleaseNotesState` is `None` (pass 3 / pass 5 didn't run), (3) the file doesn't exist on disk (state references a cleaned-up path). Success returns `FileResponse(path, media_type=..., filename=f"{patch_id}-release-notes.{ext}")` with the right MIME type (`application/pdf` / `application/vnd.openxmlformats-officedocument.wordprocessingml.document`). First use of `FileResponse` in the codebase.
+- Route shape follows the existing `{product_id}/{patch_id}` convention from every other patches route (the plan-doc shorthand `{id}` was expanded to match). URL paths end in `.pdf` / `.docx` as the plan specified.
 
-**Tests.**
-- Both endpoints return file content for a fixture patch with both files.
-- 404 when files are missing.
-- Correct Content-Type headers.
+**Tests (8 new, 284 total passing):**
+- `backend/tests/test_api_patches.py` — added `TestGetSourcePdf` and `TestGetDraftDocx` classes, 4 cases each: success (mime + body bytes match), 404 when path is `None`, 404 when file missing on disk, 404 when `find_patch` raises `PatchNotFoundError`. Mirrors the `TestGetPatchDetail` style (mock `find_patch` + `tmp_path` for real files). Added a small `_tracker_with_release_notes()` helper alongside the existing `_make_tracker()`.
 
-**Done criteria:** `curl -O` against both endpoints downloads usable files in dev.
+**Smoke test verdict (2026-04-17):** ✅ PASS. Real patch `ACARS_V8_0/8.0.18.1` (`converted` status from the Unit 5 smoke test). `curl` against `source.pdf` → 200, `application/pdf`, 5.8 MB, valid 35-page PDF. `curl` against `draft.docx` → 200, correct OOXML MIME, 6.2 MB, `content-disposition: attachment; filename="8.0.18.1-release-notes.docx"`. Negative cases: DOCX on a `downloaded`-only patch (`ACARS_V8_1/8.1.11.0`, no Pass 5 run) → 404 `{"detail":"Generated DOCX not available for this patch"}`; unknown patch id → 404 on both endpoints. Note: `curl -I` (HEAD) returns 404 because FastAPI doesn't auto-register HEAD for `@router.get` — not required for Unit 9 consumers (browsers issue GET).
+
+**Done criteria:** met. `curl -O` downloads usable files in dev against a real converted patch; full suite (276 → 284) stays green.
 
 ---
 
