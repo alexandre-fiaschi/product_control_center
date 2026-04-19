@@ -14,7 +14,7 @@ import {
   File,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { PatchSummary, JiraApprovalPayload } from "../../lib/types";
+import type { PatchSummary, JiraApprovalPayload, ApproveResponse } from "../../lib/types";
 import { getPatchDetail } from "../../lib/api";
 import { dk, FIELD_OPTIONS, inputStyle, selectStyle } from "../../lib/constants";
 
@@ -176,9 +176,7 @@ export default function JiraApprovalModal({
   const [description, setDescription] = useState("");
   const [alreadyOnPortal, setAlreadyOnPortal] = useState(false);
   const [touched, setTouched] = useState<Record<string, boolean>>({});
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [submitting, setSubmitting] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const markTouched = useCallback((field: string) => {
@@ -210,7 +208,8 @@ export default function JiraApprovalModal({
   // ─── Submit ─────────────────────────────────────────────────────────────
 
   const handleSubmit = async () => {
-    // DEV MODE: show payload as toast instead of calling API
+    const label = pipelineType === "binaries" ? "Binaries" : "Docs";
+    const endpoint = `POST /api/patches/${patch.product_id}/${patch.patch_id}/${pipelineType === "binaries" ? "binaries" : "docs"}/approve`;
     const payload: JiraApprovalPayload = {
       summary,
       client,
@@ -222,23 +221,38 @@ export default function JiraApprovalModal({
       description,
     };
 
-    const label = pipelineType === "binaries" ? "Binaries" : "Docs";
-    const endpoint = `POST /api/patches/${patch.product_id}/${patch.patch_id}/${pipelineType === "binaries" ? "binaries" : "docs"}/approve`;
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      // DEV MODE: simulate the submit in-browser. No backend call, no Jira call.
+      if (alreadyOnPortal) {
+        toast.info(
+          `[DRY RUN] ${label} — Mark as Published\n\n${endpoint}\nBody: {} (empty — skip Jira)`,
+          { duration: 5000 },
+        );
+      } else {
+        toast.info(
+          `[DRY RUN] ${label} — Create Jira Ticket\n\n${endpoint}\n\n${JSON.stringify(payload, null, 2)}`,
+          { duration: 5000 },
+        );
+      }
+      console.info(`[DRY RUN] ${endpoint}`, alreadyOnPortal ? {} : payload);
 
-    if (alreadyOnPortal) {
-      toast.info(
-        `[DRY RUN] ${label} — Mark as Published\n\n${endpoint}\nBody: {} (empty — skip Jira)`,
-        { duration: 5000 },
-      );
-    } else {
-      toast.info(
-        `[DRY RUN] ${label} — Create Jira Ticket\n\n${endpoint}\n\n${JSON.stringify(payload, null, 2)}`,
-        { duration: 5000 },
-      );
+      await new Promise((r) => setTimeout(r, 600));
+
+      const fakeResponse: ApproveResponse = {
+        patch_id: patch.patch_id,
+        pipeline: pipelineType === "binaries" ? "binaries" : "docs",
+        status: "published",
+        jira_ticket_key: alreadyOnPortal ? undefined : "DRY-RUN-123",
+        jira_ticket_url: alreadyOnPortal ? undefined : "#",
+      };
+      onSuccess(fakeResponse);
+    } catch (e) {
+      setSubmitError(e instanceof Error ? e.message : "Submit failed");
+    } finally {
+      setSubmitting(false);
     }
-
-    console.info(`[DRY RUN] ${endpoint}`, alreadyOnPortal ? {} : payload);
-    onClose();
   };
 
   // ─── Gradient colors ───────────────────────────────────────────────────
