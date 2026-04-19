@@ -19,6 +19,7 @@ logger = logging.getLogger("claude.client")
 
 # Pricing per 1M tokens (USD) — https://platform.claude.com/docs/en/about-claude/pricing
 MODEL_PRICING: dict[str, dict[str, float]] = {
+    "claude-opus-4-7":   {"input": 5.0, "output": 25.0},
     "claude-opus-4-6":   {"input": 5.0, "output": 25.0},
     "claude-sonnet-4-6": {"input": 3.0, "output": 15.0},
 }
