@@ -354,6 +354,27 @@ function PatchDetailModal({ patch, productName, onClose, onApprove }: PatchDetai
                     <div className="text-sm" style={{ color: dk.textDim }}>
                       Not Started
                     </div>
+                  ) : detail.release_notes.status === "not_found" ? (
+                    <div
+                      className="px-3 py-2.5 rounded-lg text-sm"
+                      style={{
+                        backgroundColor: "rgba(239,68,68,0.08)",
+                        border: "1px solid rgba(239,68,68,0.25)",
+                        color: "#fca5a5",
+                      }}
+                    >
+                      <div className="font-semibold mb-1">Not Found on Zendesk</div>
+                      <div className="text-xs" style={{ color: dk.textMute }}>
+                        {detail.release_notes.not_found_reason === "ambiguous_match"
+                          ? "Multiple candidate PDFs matched the version — the scraper couldn't pick one safely."
+                          : detail.release_notes.not_found_reason === "no_match"
+                            ? "No PDF on Zendesk matched the expected title for this patch version."
+                            : "The scraper could not locate a matching PDF on Zendesk."}
+                      </div>
+                      <div className="text-xs mt-2" style={{ color: dk.textDim }}>
+                        Use the <span style={{ color: dk.purple, fontWeight: 600 }}>Refetch Docs</span> button in the Pipeline row to retry once a matching PDF is published on Zendesk.
+                      </div>
+                    </div>
                   ) : (
                     buildNoteSteps(detail.release_notes).map((step, i, arr) => (
                       <TimelineStep

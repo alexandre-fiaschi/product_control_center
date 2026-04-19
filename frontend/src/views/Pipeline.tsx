@@ -51,7 +51,13 @@ export default function Pipeline() {
   const filteredActionable = useMemo(() => {
     let list = patchList?.actionable ?? [];
     if (productFilter !== "all") list = list.filter((p) => p.product_id === productFilter);
-    if (statusFilter !== "all") list = list.filter((p) => p.binaries.status === statusFilter || p.release_notes.status === statusFilter);
+    if (statusFilter === "failed_run") {
+      list = list.filter(
+        (p) => p.binaries.last_run.state === "failed" || p.release_notes.last_run.state === "failed",
+      );
+    } else if (statusFilter !== "all") {
+      list = list.filter((p) => p.binaries.status === statusFilter || p.release_notes.status === statusFilter);
+    }
     if (searchQuery) list = list.filter((p) => p.patch_id.includes(searchQuery) || p.version.includes(searchQuery));
     return list;
   }, [patchList?.actionable, productFilter, statusFilter, searchQuery]);
@@ -225,7 +231,9 @@ export default function Pipeline() {
             <option value="all">All Statuses</option>
             <option value="pending_approval">Pending Approval</option>
             <option value="not_started">Not Started</option>
+            <option value="not_found">Not Found</option>
             <option value="published">Published</option>
+            <option value="failed_run">Failed (last run)</option>
           </select>
         </div>
         <div style={{ marginLeft: "auto", fontSize: 12, color: dk.textDim }}>
@@ -310,6 +318,11 @@ export default function Pipeline() {
                             style={p.binaries.status === "pending_approval"
                               ? { background: "linear-gradient(135deg,#2563eb,#1d4ed8)", color: "#fff" }
                               : { backgroundColor: dk.surface, border: `1px solid ${dk.border}`, color: dk.textDim, opacity: 0.6, cursor: "not-allowed" }}
+                            title={
+                              p.binaries.status === "pending_approval"
+                                ? `Approve binaries for patch ${p.patch_id}.\nOpens the Jira approval form; on submit, a CFSSOCP ticket is created with the binaries .zip attached and the patch is marked Published on the CAE portal.`
+                                : `Approve Binaries is disabled — current status: "${p.binaries.status}".\nOnly patches in "Pending Approval" can be approved. Earlier pipeline steps must complete first.`
+                            }
                           >
                             Approve Bin
                           </button>
@@ -323,7 +336,11 @@ export default function Pipeline() {
                               style={p.release_notes.last_run.state === "running"
                                 ? { backgroundColor: dk.surface, border: `1px solid ${dk.border}`, color: dk.textDim, opacity: 0.6, cursor: "not-allowed" }
                                 : { background: "linear-gradient(135deg,#7c3aed,#6d28d9)", color: "#fff" }}
-                              title="Fetch release notes from Zendesk"
+                              title={
+                                p.release_notes.last_run.state === "running"
+                                  ? `Refetch Docs is disabled — a refetch is already running for patch ${p.patch_id}.\nWait for the current run to finish before retrying.`
+                                  : `Fetch release notes for patch ${p.patch_id}.\nRuns the docs pipeline end-to-end: downloads the matching PDF from Zendesk, extracts content via Claude, and renders a CAE-branded DOCX.\n${p.release_notes.status === "not_found" ? "Previous attempt found no matching PDF on Zendesk — click to retry." : "No release-notes run has been attempted yet for this patch."}\nNote: external API calls are gated by docs.enabled / claude.enabled in pipeline.json — both are currently off in dev mode, so this is a no-op.`
+                              }
                             >
                               <RefreshCw size={12} /> Refetch Docs
                             </button>
@@ -335,6 +352,11 @@ export default function Pipeline() {
                               style={p.release_notes.status === "pending_approval"
                                 ? { background: "linear-gradient(135deg,#7c3aed,#6d28d9)", color: "#fff" }
                                 : { backgroundColor: dk.surface, border: `1px solid ${dk.border}`, color: dk.textDim, opacity: 0.6, cursor: "not-allowed" }}
+                              title={
+                                p.release_notes.status === "pending_approval"
+                                  ? `Approve release notes for patch ${p.patch_id}.\nOpens the Jira approval form; on submit, a CFSSOCP ticket is created with the exported PDF attached and the release notes are marked Published on the CAE portal.`
+                                  : `Approve Docs is disabled — current status: "${p.release_notes.status}".\nOnly release notes in "Pending Approval" can be approved. Earlier pipeline steps (download, extract, convert) must complete first.`
+                              }
                             >
                               Approve Docs
                             </button>

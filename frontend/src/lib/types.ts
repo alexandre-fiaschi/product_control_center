@@ -48,6 +48,7 @@ export interface ReleaseNotesState {
   published_at?: string;
   jira_ticket_key?: string | null;
   jira_ticket_url?: string | null;
+  not_found_reason?: "no_match" | "ambiguous_match" | null;
   last_run: LastRun;
   docx_path?: string;
   pdf_path?: string;

@@ -1,9 +1,9 @@
 # Implementation Handoff
 
-**Date:** 2026-04-08 (last updated 2026-04-19)
+**Date:** 2026-04-08 (last updated 2026-04-20)
 **Author:** Alexandre Fiaschi (assisted by Claude Code)
 
-**Status:** Backend complete (5 blocks, 121 tests). Frontend complete F1–F5 (F6 testing deferred). Docs pipeline: **Units 0–7 done, Unit 8 code-complete (smoke test pending)**. Unit 4 verdict is **go** on the Claude-extraction path (Unit 4.5). Unit 5 wires `extract_release_notes` and `render_release_notes` into the orchestrator as Pass 4 + Pass 5. Unit 6 adds a 409 guard on `POST /pipeline/scan`, durable scan history under `state/scans/`, and two new refetch endpoints (targeted + bulk) for recovering from `not_found` release notes. Unit 7 adds `GET` endpoints for serving the source PDF and generated DOCX. Unit 8 adds the additive UI layer (last-run indicators, `not_found` badge, targeted refetch button, detail-modal "Last run" section) and extends `_patch_summary()` with `last_run`. 284 backend tests passing. Design in [PLAN_DOCS_PIPELINE.md](PLAN_DOCS_PIPELINE.md). **Next up:** manually smoke-test Unit 8 against real data, then start Unit 9 (side-by-side review view). See "Next unit to check" below.
+**Status:** Backend complete (5 blocks, 121 tests). Frontend complete F1–F5 (F6 testing deferred). Docs pipeline: **Units 0–7 done, Unit 8 code-complete with follow-up UX polish (partial smoke test done)**. Unit 4 verdict is **go** on the Claude-extraction path (Unit 4.5). Unit 5 wires `extract_release_notes` and `render_release_notes` into the orchestrator as Pass 4 + Pass 5. Unit 6 adds a 409 guard on `POST /pipeline/scan`, durable scan history under `state/scans/`, and two new refetch endpoints (targeted + bulk) for recovering from `not_found` release notes. Unit 7 adds `GET` endpoints for serving the source PDF and generated DOCX. Unit 8 adds the additive UI layer (last-run indicators, `not_found` badge, targeted refetch button, detail-modal "Last run" section) and extends `_patch_summary()` with `last_run`. Post-Unit-8 session added: JiraApprovalModal Path B fix (build unblock + frontend-only submit simulation), action-button hover tooltips, `AlertCircle` icon for failed last-run (replacing plain red dot), dedicated "Not Found" card in the detail modal, and "Failed (last run)" + "Not Found" filter options in the Pipeline dropdown. 284 backend tests passing; `npm run build` green. Design in [PLAN_DOCS_PIPELINE.md](PLAN_DOCS_PIPELINE.md). **Next up:** finish the Unit 8 smoke test (the JiraApprovalModal click-through path), then start Unit 9 (side-by-side review view). See "Next unit to check" below.
 
 ---
 
@@ -11,20 +11,70 @@
 
 Before starting Unit 9, handle these in this order:
 
-1. **Frontend build blocker — pre-existing, surfaced during Unit 8 verification.** `cd frontend && npm run build` fails on three `TS6133` unused-declaration errors in [frontend/src/components/patches/JiraApprovalModal.tsx](frontend/src/components/patches/JiraApprovalModal.tsx):
-   - Line 151 — `onSuccess` prop declared but never read.
-   - Line 180 — `setSubmitting` from `useState` declared but never read.
-   - Line 182 — `setSubmitError` from `useState` declared but never read.
+1. **JiraApprovalModal click-through smoke test.** The Path B frontend-only simulation is code-complete and the build is green, but the full UX (click Approve → spinner for ~600 ms → modal closes → two toasts fire → `state/patches/*.json` mtimes unchanged) has not been verified end-to-end in a browser. Recipe:
+   - Start backend (`uvicorn app.main:app --reload`) + frontend (`npm run dev`).
+   - Open any `Pending Approval` patch → click **Approve Bin** → hit the green submit button at the bottom of the modal.
+   - Expect: blue spinner + "Creating ticket..." on the button for ~600 ms → modal closes → two toasts fire (`[DRY RUN] ${label} — Create Jira Ticket ... {payload}` and parent's `Binaries published — DRY-RUN-123`) → Pipeline list refetches.
+   - Verify `state/patches/*.json` mtimes are unchanged after the submit — the whole thing stayed in the browser, zero writes to disk. This is the "didn't leak" gate.
+   - Toggle "Already available on portal" ON → resubmit → expect the single-path variant (skip-Jira toast + `Binaries marked as published` with no ticket key).
+   - Error path (optional): temporarily add `throw new Error("forced")` inside `handleSubmit` → confirm the red error banner renders and the modal stays open.
 
-   Confirmed pre-existing by stashing Unit 8 changes and re-running the build — errors predate Unit 8 (last touched the file in commit `2401beb F4 polish: modal layout fixes…`). Likely a mechanical cleanup: either wire the unused values through (probably what was intended) or drop them. Either way the build needs to go green before Unit 9 starts.
+   When it's time to flip this to real Jira submits (a future unit), it's a ~5-line change in `handleSubmit`: remove the `setTimeout` + fake response; add `await approveBinaries(...)`. Parent callback + toast + invalidateQueries all already work.
 
-2. **Unit 8 manual smoke test.** Code is merged but no browser verification. Dev-mode recipe:
-   - Start backend + frontend dev servers.
-   - Find a patch with `release_notes.status = "not_started"` (plenty exist in `state/patches/`) → confirm the "Refetch Docs" button shows in the Actions column → click it → watch the spinner appear on the release-notes badge while `last_run.state === "running"` → confirm status advances on success, or flips to `not_found` if Zendesk has nothing.
-   - Force a `last_run.state = "failed"` (e.g. temporarily break Zendesk credentials in `.env`) → confirm red-dot retry button appears next to the release-notes badge → hover shows step + error → click triggers another refetch.
-   - Open the detail modal on any patch → confirm `LastRunSection` renders correctly in both columns for populated, idle, and failed cases.
+2. **Unit 9 prerequisite — LibreOffice.** Unit 9's preview endpoint needs `libreoffice --headless` on the dev machine. Install via `brew install --cask libreoffice` before starting Unit 9 work.
 
-3. **Unit 9 prerequisite — LibreOffice.** Unit 9's preview endpoint needs `libreoffice --headless` on the dev machine. Install via `brew install --cask libreoffice` before starting Unit 9 work.
+---
+
+## Unit 8 UX polish — added post-initial-ship (2026-04-20)
+
+Shipped as follow-up after the initial Unit 8 commit landed. Not a separate unit; just tightening the UI layer that unit introduced.
+
+- **`AlertCircle` (circle with `!`) instead of plain red dot** for `last_run.state === "failed"` on `StatusBadge`. The plain dot was too ambiguous; the icon reads universally as "error / attention needed". Tooltip copy tightened — leads with `Last run failed — click to retry`, then `Step:`, `Error:`, `Finished:` on separate lines.
+
+- **Hover tooltips on every action button** (Approve Bin, Refetch Docs, Approve Docs) via the native HTML `title` attribute — no new component. Each tooltip names the patch, describes what happens on click, and explains **why** a button is disabled when it is (e.g. "Only patches in 'Pending Approval' can be approved"). The Refetch Docs tooltip additionally states `"external API calls are gated by docs.enabled / claude.enabled — both are currently off in dev mode, so this is a no-op"` to prevent the "did I just burn $10 of Claude API?" panic that surfaced during smoke testing.
+
+- **Dedicated "Not Found on Zendesk" card in PatchDetailModal** when `release_notes.status === "not_found"`. Previously fell through to an empty timeline (`buildNoteSteps` returns `[]` when no timestamps are populated) and the section looked broken. Now shows a muted-red card with a reason-specific subtitle (`no_match` → "No PDF on Zendesk matched the expected title" / `ambiguous_match` → "Multiple candidate PDFs matched — the scraper couldn't pick one safely") and a retry hint pointing at the Pipeline-row button. Added `not_found_reason?: "no_match" | "ambiguous_match" | null` to the `ReleaseNotesState` TS interface to match the backend model.
+
+- **Pipeline status filter** extended with two triage-oriented options: `Not Found` (workflow status match) and `Failed (last run)` (custom: matches when either `binaries.last_run.state === "failed"` OR `release_notes.last_run.state === "failed"`). Running / Succeeded / Idle filters intentionally omitted — not useful for Alex's one-person ops triage workflow.
+
+---
+
+## JiraApprovalModal — Path B frontend-only simulation (2026-04-20)
+
+Unblocked the three `TS6133` errors flagged at the end of Unit 8 without wiring real Jira calls. Three previously-unused declarations (`onSuccess` prop, `setSubmitting`, `setSubmitError`) now do meaningful work:
+
+1. `handleSubmit` is now an async function that calls `setSubmitting(true)` → fires the existing `[DRY RUN]` toast + `console.info` → waits 600 ms (`setTimeout`) to simulate network latency → constructs a fake `ApproveResponse` (`{patch_id, pipeline, status: "published", jira_ticket_key: "DRY-RUN-123"}` or no ticket key if `alreadyOnPortal`) → calls `onSuccess(fakeResponse)`.
+2. `onSuccess` flows up to `Pipeline.tsx`'s existing `handleApproveSuccess` which fires the parent toast + `queryClient.invalidateQueries`.
+3. Error path is wrapped in try/catch/finally: any throw inside the try block populates `setSubmitError` (the red banner at line 694 finally lights up) and the modal stays open.
+
+**Zero outbound calls** — not to Jira, not to the backend approve endpoint, not to anywhere. Patch state files are not written. The JSX consumers (`disabled={submitting}`, the spinner ternary, the error banner) all already existed; they just needed a writer. Migration to real submits is a ~5-line swap when the approval flow is ready to go live.
+
+Decision context captured in [~/.claude/plans/tranquil-moseying-bee.md](~/.claude/plans/tranquil-moseying-bee.md): considered Path A (delete scaffolding) and Path C (real backend call + rely on `jira.enabled=false`) and ruled both out — A loses working UX, C's safety depends on the backend having a `jira.enabled` gate which it actually doesn't ([patch_service.py:64-128](backend/app/services/patch_service.py#L64-L128) branches on whether the request body is populated, not on any flag; sending the payload WILL create real Jira tickets).
+
+---
+
+## Partial smoke test verdict (2026-04-20)
+
+**Programmatically verified:**
+- List endpoint returns `last_run` on both tracks for every patch.
+- Detail endpoint returns `last_run` and `not_found_reason` correctly.
+- Targeted refetch endpoint contract matches the frontend's expected shape.
+- Backend tests: 284 passed, 6 skipped, 11 deselected.
+- Frontend build: `tsc -b && vite build` clean; bundle ~361 kB.
+
+**Visually verified by Alex** (via state-file-forced test patches on `ACARS_V7_3`):
+- ✅ Blue `Loader2` spinner appears next to the release-notes badge for `last_run.state === "running"`.
+- ✅ Red `AlertCircle` (after the polish session) appears for `last_run.state === "failed"`; hover tooltip renders full error context.
+- ✅ Muted-red `Not Found` badge on rows with `status === "not_found"`.
+- ✅ `PatchDetailModal` "Not Found on Zendesk" card renders with the correct reason subtitle.
+- ✅ `PatchDetailModal` `LastRunSection` renders Failed and Running variants correctly with step, timestamps, and error block.
+
+**Still pending visual verification:**
+- ⬜ JiraApprovalModal click-through (see "Next unit to check" #1).
+- ⬜ Action-button hover tooltips (readable, appropriate delay).
+- ⬜ New filter dropdown options produce the expected filtered lists.
+
+**Gotcha documented:** in dev mode with `docs.enabled=false` and `claude.enabled=false`, the Refetch Docs button hits the backend endpoint but the orchestrator bails out early with `scan.docs.disabled reason=feature_flag_off` + `scan.refetch.no_zendesk` — no Zendesk HTTP call, no Claude API call, $0. The refetch endpoint also does NOT update `last_run` on a feature-flag bailout (small quirk, flagged for future design decision).
 
 ---
 

@@ -1,4 +1,4 @@
-import { Loader2 } from "lucide-react";
+import { Loader2, AlertCircle } from "lucide-react";
 import { STATUS_CONFIG } from "../../lib/constants";
 import type { LastRun } from "../../lib/types";
 
@@ -37,16 +37,18 @@ export default function StatusBadge({ status, lastRun, onRetry }: Props) {
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); onRetry?.(); }}
-          className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full hover:ring-2 hover:ring-red-400/40 transition"
-          style={{ backgroundColor: "#ef4444" }}
+          className="inline-flex items-center justify-center rounded-full hover:ring-2 hover:ring-red-400/40 transition"
+          style={{ color: "#f87171" }}
           title={
-            `Failed${lastRun?.step ? ` at ${lastRun.step}` : ""}` +
-            (lastRun?.error ? `\n${lastRun.error}` : "") +
-            (lastRun?.finished_at ? `\n${new Date(lastRun.finished_at).toLocaleString()}` : "") +
-            (onRetry ? "\n\nClick to retry" : "")
+            `Last run failed${onRetry ? " — click to retry" : ""}` +
+            (lastRun?.step ? `\nStep: ${lastRun.step}` : "") +
+            (lastRun?.error ? `\nError: ${lastRun.error}` : "") +
+            (lastRun?.finished_at ? `\nFinished: ${new Date(lastRun.finished_at).toLocaleString()}` : "")
           }
           aria-label="Last run failed — click to retry"
-        />
+        >
+          <AlertCircle size={14} strokeWidth={2.5} />
+        </button>
       )}
     </span>
   );
