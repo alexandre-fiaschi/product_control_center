@@ -4,11 +4,25 @@ export type PatchStatus =
   | "not_started"
   | "discovered"
   | "downloaded"
+  | "extracted"
   | "converted"
   | "pending_approval"
   | "approved"
   | "pdf_exported"
-  | "published";
+  | "published"
+  | "not_found";
+
+// ─── Last run (execution state, orthogonal to workflow status) ──────────────
+
+export type LastRunState = "idle" | "running" | "success" | "failed";
+
+export interface LastRun {
+  state: LastRunState;
+  started_at: string | null;
+  finished_at: string | null;
+  step: string | null;
+  error: string | null;
+}
 
 // ─── Pipeline sub-objects ───────────────────────────────────────────────────
 
@@ -20,6 +34,7 @@ export interface BinariesState {
   published_at?: string;
   jira_ticket_key?: string | null;
   jira_ticket_url?: string | null;
+  last_run: LastRun;
   files?: string[];
 }
 
@@ -33,6 +48,7 @@ export interface ReleaseNotesState {
   published_at?: string;
   jira_ticket_key?: string | null;
   jira_ticket_url?: string | null;
+  last_run: LastRun;
   docx_path?: string;
   pdf_path?: string;
 }
@@ -43,8 +59,8 @@ export interface PatchSummary {
   product_id: string;
   patch_id: string;
   version: string;
-  binaries: Pick<BinariesState, "status" | "jira_ticket_key" | "jira_ticket_url" | "published_at">;
-  release_notes: Pick<ReleaseNotesState, "status" | "jira_ticket_key" | "jira_ticket_url" | "published_at">;
+  binaries: Pick<BinariesState, "status" | "jira_ticket_key" | "jira_ticket_url" | "published_at" | "last_run">;
+  release_notes: Pick<ReleaseNotesState, "status" | "jira_ticket_key" | "jira_ticket_url" | "published_at" | "last_run">;
 }
 
 export interface PatchDetail {
@@ -129,6 +145,51 @@ export interface ApproveResponse {
   jira_ticket_url?: string;
   error?: string;
   note?: string;
+}
+
+// ─── Refetch responses ──────────────────────────────────────────────────────
+
+export type RefetchOutcome =
+  | "converted"
+  | "downloaded"
+  | "extract_skipped"
+  | "not_found"
+  | "already_running"
+  | "not_eligible"
+  | "failed"
+  | "error";
+
+export interface RefetchReleaseNotesResponse {
+  outcome: RefetchOutcome;
+  product_id: string;
+  patch_id: string;
+  release_notes_status: PatchStatus;
+  last_run: LastRun;
+  scan_id: string;
+}
+
+export interface BulkRefetchResult {
+  product_id: string;
+  patch_id: string;
+  outcome: RefetchOutcome;
+  release_notes_status: PatchStatus;
+}
+
+export interface BulkRefetchResponse {
+  scan_id: string;
+  version_filter: string;
+  attempted: number;
+  results: BulkRefetchResult[];
+  counts: {
+    attempted: number;
+    downloaded: number;
+    not_found: number;
+    converted: number;
+    extract_skipped: number;
+    not_eligible: number;
+    already_running: number;
+    failed: number;
+  };
 }
 
 // ─── Jira approval form ─────────────────────────────────────────────────────

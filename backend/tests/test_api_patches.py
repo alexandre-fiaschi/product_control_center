@@ -50,7 +50,11 @@ class TestListAllPatches:
         # binaries=pending_approval, release_notes=published → actionable
         assert len(data["actionable"]) == 1
         assert len(data["history"]) == 0
-        assert data["actionable"][0]["product_id"] == "ACARS_V8_1"
+        item = data["actionable"][0]
+        assert item["product_id"] == "ACARS_V8_1"
+        # last_run must be present on both tracks so the UI can render indicators
+        assert item["binaries"]["last_run"]["state"] == "idle"
+        assert item["release_notes"]["last_run"]["state"] == "idle"
 
     @patch("app.api.patches.load_tracker")
     @patch("app.api.patches.settings")

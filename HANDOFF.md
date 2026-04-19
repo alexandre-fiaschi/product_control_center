@@ -1,9 +1,30 @@
 # Implementation Handoff
 
-**Date:** 2026-04-08 (last updated 2026-04-17)
+**Date:** 2026-04-08 (last updated 2026-04-19)
 **Author:** Alexandre Fiaschi (assisted by Claude Code)
 
-**Status:** Backend complete (5 blocks, 121 tests). Frontend complete F1–F5 (F6 testing deferred). Docs pipeline: **Units 0–6 done**. Unit 4 verdict is **go** on the Claude-extraction path (Unit 4.5). Unit 5 wires `extract_release_notes` and `render_release_notes` into the orchestrator as Pass 4 + Pass 5. Unit 6 adds a 409 guard on `POST /pipeline/scan`, durable scan history under `state/scans/`, and two new refetch endpoints (targeted + bulk) for recovering from `not_found` release notes. 276 backend tests passing. Design in [PLAN_DOCS_PIPELINE.md](PLAN_DOCS_PIPELINE.md). Next up is Unit 7 (file serving endpoints for the Unit 9 review view).
+**Status:** Backend complete (5 blocks, 121 tests). Frontend complete F1–F5 (F6 testing deferred). Docs pipeline: **Units 0–7 done, Unit 8 code-complete (smoke test pending)**. Unit 4 verdict is **go** on the Claude-extraction path (Unit 4.5). Unit 5 wires `extract_release_notes` and `render_release_notes` into the orchestrator as Pass 4 + Pass 5. Unit 6 adds a 409 guard on `POST /pipeline/scan`, durable scan history under `state/scans/`, and two new refetch endpoints (targeted + bulk) for recovering from `not_found` release notes. Unit 7 adds `GET` endpoints for serving the source PDF and generated DOCX. Unit 8 adds the additive UI layer (last-run indicators, `not_found` badge, targeted refetch button, detail-modal "Last run" section) and extends `_patch_summary()` with `last_run`. 284 backend tests passing. Design in [PLAN_DOCS_PIPELINE.md](PLAN_DOCS_PIPELINE.md). **Next up:** manually smoke-test Unit 8 against real data, then start Unit 9 (side-by-side review view). See "Next unit to check" below.
+
+---
+
+## Next unit to check
+
+Before starting Unit 9, handle these in this order:
+
+1. **Frontend build blocker — pre-existing, surfaced during Unit 8 verification.** `cd frontend && npm run build` fails on three `TS6133` unused-declaration errors in [frontend/src/components/patches/JiraApprovalModal.tsx](frontend/src/components/patches/JiraApprovalModal.tsx):
+   - Line 151 — `onSuccess` prop declared but never read.
+   - Line 180 — `setSubmitting` from `useState` declared but never read.
+   - Line 182 — `setSubmitError` from `useState` declared but never read.
+
+   Confirmed pre-existing by stashing Unit 8 changes and re-running the build — errors predate Unit 8 (last touched the file in commit `2401beb F4 polish: modal layout fixes…`). Likely a mechanical cleanup: either wire the unused values through (probably what was intended) or drop them. Either way the build needs to go green before Unit 9 starts.
+
+2. **Unit 8 manual smoke test.** Code is merged but no browser verification. Dev-mode recipe:
+   - Start backend + frontend dev servers.
+   - Find a patch with `release_notes.status = "not_started"` (plenty exist in `state/patches/`) → confirm the "Refetch Docs" button shows in the Actions column → click it → watch the spinner appear on the release-notes badge while `last_run.state === "running"` → confirm status advances on success, or flips to `not_found` if Zendesk has nothing.
+   - Force a `last_run.state = "failed"` (e.g. temporarily break Zendesk credentials in `.env`) → confirm red-dot retry button appears next to the release-notes badge → hover shows step + error → click triggers another refetch.
+   - Open the detail modal on any patch → confirm `LastRunSection` renders correctly in both columns for populated, idle, and failed cases.
+
+3. **Unit 9 prerequisite — LibreOffice.** Unit 9's preview endpoint needs `libreoffice --headless` on the dev machine. Install via `brew install --cask libreoffice` before starting Unit 9 work.
 
 ---
 

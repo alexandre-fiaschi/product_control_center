@@ -31,6 +31,7 @@ def _patch_summary(patch_id: str, version: str, patch, *, include_product: str |
         "status": patch.binaries.status,
         "jira_ticket_key": patch.binaries.jira_ticket_key,
         "jira_ticket_url": patch.binaries.jira_ticket_url,
+        "last_run": patch.binaries.last_run.model_dump(mode="json"),
     }
     if patch.binaries.status == "published" and patch.binaries.published_at:
         binaries["published_at"] = patch.binaries.published_at
@@ -39,6 +40,7 @@ def _patch_summary(patch_id: str, version: str, patch, *, include_product: str |
         "status": patch.release_notes.status,
         "jira_ticket_key": patch.release_notes.jira_ticket_key,
         "jira_ticket_url": patch.release_notes.jira_ticket_url,
+        "last_run": patch.release_notes.last_run.model_dump(mode="json"),
     }
     if patch.release_notes.status == "published" and patch.release_notes.published_at:
         release_notes["published_at"] = patch.release_notes.published_at

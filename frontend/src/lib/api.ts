@@ -7,6 +7,8 @@ import type {
   ScanResponse,
   ApproveResponse,
   JiraApprovalPayload,
+  RefetchReleaseNotesResponse,
+  BulkRefetchResponse,
 } from "./types";
 
 const API_BASE = "/api";
@@ -89,5 +91,20 @@ export function approveDocs(
   return request<ApproveResponse>(`/patches/${productId}/${patchId}/docs/approve`, {
     method: "POST",
     body: fields ? JSON.stringify(fields) : "{}",
+  });
+}
+
+export function refetchReleaseNotes(productId: string, patchId: string) {
+  return request<RefetchReleaseNotesResponse>(
+    `/patches/${productId}/${patchId}/release-notes/refetch`,
+    { method: "POST", body: "{}" },
+  );
+}
+
+export function refetchReleaseNotesBulk(version?: string) {
+  const qs = version ? `?version=${encodeURIComponent(version)}` : "";
+  return request<BulkRefetchResponse>(`/pipeline/scan/release-notes${qs}`, {
+    method: "POST",
+    body: "{}",
   });
 }

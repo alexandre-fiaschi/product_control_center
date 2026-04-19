@@ -24,6 +24,7 @@ export const STATUS_CONFIG: Record<string, { label: string; bg: string; text: st
   converted:         { label: "Converted",         bg: "rgba(192,132,252,0.15)", text: "#c4b5fd", dot: "#a78bfa" },
   pdf_exported:      { label: "PDF Exported",      bg: "rgba(45,212,191,0.15)",  text: "#5eead4", dot: "#2dd4bf" },
   published:         { label: "Published",         bg: "rgba(52,211,153,0.12)",  text: "#6ee7b7", dot: "#34d399" },
+  not_found:         { label: "Not Found",         bg: "rgba(239,68,68,0.12)",   text: "#fca5a5", dot: "#ef4444" },
 };
 
 // Jira field options (from pipeline.json)

@@ -618,24 +618,37 @@ Unit 4 (Block B prototype) is the only one that runs **in parallel** with the re
 
 ---
 
-### Unit 8 — UI: additive changes (badge, run indicator, refetch action, detail modal)
+### Unit 8 — UI: additive changes (badge, run indicator, refetch action, detail modal) ✅ DONE (2026-04-19, smoke test pending)
 
 **Effort:** Medium.
 **Depends on:** unit 6.
 
-**Scope.** All the additive changes to the existing [Pipeline.tsx](frontend/src/views/Pipeline.tsx) and [PatchDetailModal.tsx](frontend/src/components/patches/PatchDetailModal.tsx) **except** the side-by-side review view (that's unit 9). Workflow status badges stay where they are. No layout changes.
+**Scope as built.** All the additive changes to the existing [Pipeline.tsx](frontend/src/views/Pipeline.tsx) and [PatchDetailModal.tsx](frontend/src/components/patches/PatchDetailModal.tsx) **except** the side-by-side review view (that's unit 9). Workflow status badges stay where they are. No layout changes. One small backend prerequisite surfaced during implementation (see first file below).
 
-**Files:**
-- [frontend/src/lib/constants.ts](frontend/src/lib/constants.ts) — add `not_found` entry to `STATUS_CONFIG` with appropriate badge style.
-- [frontend/src/lib/types.ts](frontend/src/lib/types.ts) — add `LastRun` type and extend `BinariesState` / `ReleaseNotesState` types to include `last_run`.
-- [frontend/src/components/shared/StatusBadge.tsx](frontend/src/components/shared/StatusBadge.tsx) — accept an optional `lastRun` prop, render a small spinner icon when `last_run.state == "running"`, render a small red dot when `last_run.state == "failed"`. Hover on red dot reveals a tooltip with `step`, `error`, `finished_at`. Click on red dot offers "Retry" (calls the targeted refetch endpoint).
-- [frontend/src/views/Pipeline.tsx](frontend/src/views/Pipeline.tsx) — pass `last_run` to both `StatusBadge` instances; add a "Refetch Release Notes" action button in the actions area for rows where `release_notes.status ∈ {not_started, not_found}`.
-- [frontend/src/components/patches/PatchDetailModal.tsx](frontend/src/components/patches/PatchDetailModal.tsx) — add a "Last run" section per track showing `state`, `started_at`, `finished_at`, `step`, `error` when populated.
-- [frontend/src/lib/api.ts](frontend/src/lib/api.ts) — add API client functions for `refetchReleaseNotes(patchId)` and the bulk endpoint.
+**Files (as built):**
+- [backend/app/api/patches.py](backend/app/api/patches.py) — `_patch_summary()` now projects `last_run` on both tracks (was previously dropped). Without this the Pipeline list view couldn't render running/failed indicators — only the detail endpoint serialized `last_run`. Uses `model_dump(mode="json")` to match the datetime serialization the detail endpoint already does.
+- [backend/tests/test_api_patches.py](backend/tests/test_api_patches.py) — extended `TestListAllPatches::test_splits_actionable_history` with assertions that both `binaries.last_run.state` and `release_notes.last_run.state` come back as `"idle"` (the model default).
+- [frontend/src/lib/types.ts](frontend/src/lib/types.ts) — added `LastRunState`, `LastRun`, `RefetchOutcome`, `RefetchReleaseNotesResponse`, `BulkRefetchResponse`, `BulkRefetchResult`. Extended `PatchStatus` with `"not_found"` and `"extracted"` (the latter was already valid on the backend and missing in the frontend union). Added `last_run: LastRun` to `BinariesState` and `ReleaseNotesState`, and threaded it through the `PatchSummary` `Pick`s for both tracks.
+- [frontend/src/lib/constants.ts](frontend/src/lib/constants.ts) — `not_found` entry added to `STATUS_CONFIG` with a muted red palette (`#ef4444` dot, `#fca5a5` text, `rgba(239,68,68,0.12)` bg) — distinct from a crash, reads as "we looked, Zendesk had nothing".
+- [frontend/src/lib/api.ts](frontend/src/lib/api.ts) — `refetchReleaseNotes(productId, patchId)` (targeted, `POST /patches/.../release-notes/refetch`) and `refetchReleaseNotesBulk(version?)` (bulk, `POST /pipeline/scan/release-notes?version=...`). Bulk is wired but no UI entry point in this unit (plan didn't specify one; deferred until needed).
+- [frontend/src/components/shared/StatusBadge.tsx](frontend/src/components/shared/StatusBadge.tsx) — accepts optional `lastRun?: LastRun` and `onRetry?: () => void`. Renders a blue `Loader2` spinner when `lastRun.state === "running"`. Renders a small red-dot button when `lastRun.state === "failed"` — hover shows a native `title` tooltip with `step`, `error`, `finished_at` + "Click to retry" hint; click invokes `onRetry` (with `stopPropagation` so it doesn't also open the detail modal). Used native `title` instead of introducing a tooltip component — zero deps, matches the project's simplicity preference.
+- [frontend/src/views/Pipeline.tsx](frontend/src/views/Pipeline.tsx) — both `StatusBadge` instances now receive `lastRun`; the release-notes badge additionally passes `onRetry={() => handleRefetchReleaseNotes(p)}`. New `handleRefetchReleaseNotes` callback lives alongside `handleApproveSuccess`: calls the targeted refetch API, maps each `outcome` value to an appropriate `toast.success/error/info` message, then invalidates the `patches` and `dashboard-summary` queries so the UI refreshes. In the Actions column, the "Approve Docs" button is replaced by a "Refetch Docs" button (with `RefreshCw` icon) when `release_notes.status ∈ {"not_started", "not_found"}`. Button is disabled while `last_run.state === "running"` — the backend already guards with `already_running`, but the UI disable gives immediate feedback.
+- [frontend/src/components/patches/PatchDetailModal.tsx](frontend/src/components/patches/PatchDetailModal.tsx) — new `LastRunSection` subcomponent rendered below the timeline in both the binaries and release-notes columns, just above the approve button. Shows `state` with a state-specific color (idle=muted, running=blue, success=green, failed=red), a spinner when running, and `step` / `started_at` / `finished_at` / `error` when populated. When idle with no timestamps, renders `"No run yet"`. Error text is shown in a mono block clamped to 3 lines via `-webkit-line-clamp`; full text in the `title` attribute.
 
-**Tests.** `cd frontend && npm run build` clean. Manual smoke test in dev: a `not_found` patch shows the badge and a working refetch button; a `failed` `last_run` shows the red dot with hover.
+**Tests (1 new assertion, 284 total passing):**
+- Backend: added the `last_run` presence check to the existing list-endpoint test. Full suite (`pytest tests/ -k "not integration"`) green: 284 passed.
+- Frontend: `npx tsc -b` — all Unit 8 files compile clean. See "Known issue" below for a pre-existing blocker.
 
-**Done criteria:** UI renders all `last_run` states correctly against real backend data; refetch button triggers a real Zendesk lookup end-to-end.
+**Smoke test:** PENDING. Deferred until Alex can exercise the UI end-to-end in dev mode against a real patch (targeted refetch against Zendesk, forced failure for the red-dot retry, and detail-modal `LastRunSection` rendering). The code paths are all wired but no browser verification has been done yet.
+
+**Known issue surfaced during verification (NOT introduced by Unit 8):**
+- `cd frontend && npm run build` is broken on `main` before this unit's changes. Three `TS6133` unused-declaration errors in [frontend/src/components/patches/JiraApprovalModal.tsx](frontend/src/components/patches/JiraApprovalModal.tsx):
+  - Line 151 — `onSuccess` prop declared but never read.
+  - Line 180 — `setSubmitting` from `useState` declared but never read.
+  - Line 182 — `setSubmitError` from `useState` declared but never read.
+  Verified by stashing Unit 8 changes and re-running the build — the errors predate this unit (last touched in commit `2401beb F4 polish: modal layout fixes…`). `tsc` on the files touched by Unit 8 passes cleanly; the build blocker lives entirely in `JiraApprovalModal.tsx`. **Flagged as the first item to handle at the start of the next unit** — likely a trivial mechanical cleanup (either wire the unused state through or drop it). Tracked in HANDOFF.md → "Next unit to check".
+
+**Done criteria:** code-complete. Full end-to-end smoke test against a real `not_found` / `failed` patch in dev is the remaining gate before declaring the unit fully shipped.
 
 ---
 

@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { X, FolderOpen, Box, FileText, ExternalLink, Check, Loader2, AlertCircle } from "lucide-react";
 import { getPatchDetail } from "../../lib/api";
 import { dk, formatDateTime } from "../../lib/constants";
-import type { PatchSummary, PatchDetail, BinariesState, ReleaseNotesState } from "../../lib/types";
+import type { PatchSummary, PatchDetail, BinariesState, ReleaseNotesState, LastRun } from "../../lib/types";
 
 interface PatchDetailModalProps {
   patch: PatchSummary;
@@ -65,6 +65,84 @@ const TimelineStep = ({
     </div>
   </div>
 );
+
+// ─── Last-run section ────────────────────────────────────────────────────────
+
+const LAST_RUN_COLORS: Record<LastRun["state"], string> = {
+  idle: dk.textDim,
+  running: "#60a5fa",
+  success: "#34d399",
+  failed: "#f87171",
+};
+
+const LAST_RUN_LABELS: Record<LastRun["state"], string> = {
+  idle: "Idle",
+  running: "Running",
+  success: "Succeeded",
+  failed: "Failed",
+};
+
+function LastRunSection({ lastRun }: { lastRun: LastRun }) {
+  const hasRun = lastRun.started_at || lastRun.finished_at;
+  const color = LAST_RUN_COLORS[lastRun.state];
+
+  return (
+    <div
+      className="mt-6 px-3 py-2.5 rounded-lg text-xs"
+      style={{ backgroundColor: dk.surface, border: `1px solid ${dk.border}` }}
+    >
+      <div className="flex items-center gap-2 mb-1">
+        <span className="uppercase tracking-wider font-semibold" style={{ color: dk.textMute }}>
+          Last run
+        </span>
+        <span className="font-semibold" style={{ color }}>
+          {LAST_RUN_LABELS[lastRun.state]}
+        </span>
+        {lastRun.state === "running" && (
+          <Loader2 size={12} className="animate-spin" style={{ color }} />
+        )}
+      </div>
+      {!hasRun && lastRun.state === "idle" ? (
+        <div style={{ color: dk.textDim }}>No run yet</div>
+      ) : (
+        <div className="space-y-0.5">
+          {lastRun.step && (
+            <div style={{ color: dk.text }}>
+              <span style={{ color: dk.textMute }}>Step: </span>{lastRun.step}
+            </div>
+          )}
+          {lastRun.started_at && (
+            <div style={{ color: dk.textDim }}>
+              <span style={{ color: dk.textMute }}>Started: </span>{formatDateTime(lastRun.started_at)}
+            </div>
+          )}
+          {lastRun.finished_at && (
+            <div style={{ color: dk.textDim }}>
+              <span style={{ color: dk.textMute }}>Finished: </span>{formatDateTime(lastRun.finished_at)}
+            </div>
+          )}
+          {lastRun.error && (
+            <div
+              className="mt-1 px-2 py-1 rounded font-mono overflow-hidden"
+              style={{
+                backgroundColor: "rgba(239,68,68,0.08)",
+                color: "#fca5a5",
+                display: "-webkit-box",
+                WebkitLineClamp: 3,
+                WebkitBoxOrient: "vertical",
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+              }}
+              title={lastRun.error}
+            >
+              {lastRun.error}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -233,6 +311,8 @@ function PatchDetailModal({ patch, productName, onClose, onApprove }: PatchDetai
                   ))}
                 </div>
 
+                <LastRunSection lastRun={detail.binaries.last_run} />
+
                 {patch.binaries.status !== "published" && (
                   <button
                     disabled={patch.binaries.status !== "pending_approval"}
@@ -286,6 +366,8 @@ function PatchDetailModal({ patch, productName, onClose, onApprove }: PatchDetai
                     ))
                   )}
                 </div>
+
+                <LastRunSection lastRun={detail.release_notes.last_run} />
 
                 {patch.release_notes.status !== "published" && (
                   <button

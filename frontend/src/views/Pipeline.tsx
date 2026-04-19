@@ -2,8 +2,8 @@ import { useState, useMemo, useCallback, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Search, Filter, ChevronUp, ChevronDown, ExternalLink } from "lucide-react";
-import { getPatches, getProducts } from "../lib/api";
+import { Search, Filter, ChevronUp, ChevronDown, ExternalLink, RefreshCw } from "lucide-react";
+import { getPatches, getProducts, refetchReleaseNotes } from "../lib/api";
 import { dk, formatDate } from "../lib/constants";
 import type { PatchSummary, ApproveResponse } from "../lib/types";
 import StatusBadge from "../components/shared/StatusBadge";
@@ -103,6 +103,36 @@ export default function Pipeline() {
       setApprovalModal({ patch, pipelineType });
     },
     [],
+  );
+
+  // Trigger a release-notes refetch for a single patch
+  const handleRefetchReleaseNotes = useCallback(
+    async (patch: PatchSummary) => {
+      try {
+        const res = await refetchReleaseNotes(patch.product_id, patch.patch_id);
+        const msg =
+          res.outcome === "converted" ? `Release notes converted (${patch.patch_id})` :
+          res.outcome === "downloaded" ? `Release notes downloaded (${patch.patch_id})` :
+          res.outcome === "extract_skipped" ? `Downloaded; extraction skipped (${patch.patch_id})` :
+          res.outcome === "not_found" ? `No matching release notes on Zendesk (${patch.patch_id})` :
+          res.outcome === "already_running" ? `Refetch already in progress (${patch.patch_id})` :
+          res.outcome === "not_eligible" ? `Not eligible for refetch (${patch.patch_id})` :
+          `Refetch completed: ${res.outcome}`;
+        if (res.outcome === "converted" || res.outcome === "downloaded") {
+          toast.success(msg);
+        } else if (res.outcome === "not_found" || res.outcome === "not_eligible") {
+          toast.error(msg);
+        } else {
+          toast.info(msg);
+        }
+        queryClient.invalidateQueries({ queryKey: ["patches"] });
+        queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Refetch failed";
+        toast.error(`Refetch failed: ${msg}`);
+      }
+    },
+    [queryClient],
   );
 
   // Handle successful approval
@@ -248,12 +278,16 @@ export default function Pipeline() {
                       <Td mono bold>{p.patch_id}</Td>
                       <Td>
                         <button className="cursor-pointer" onClick={() => setDetailPatch(p)}>
-                          <StatusBadge status={p.binaries.status} />
+                          <StatusBadge status={p.binaries.status} lastRun={p.binaries.last_run} />
                         </button>
                       </Td>
                       <Td>
                         <button className="cursor-pointer" onClick={() => setDetailPatch(p)}>
-                          <StatusBadge status={p.release_notes.status} />
+                          <StatusBadge
+                            status={p.release_notes.status}
+                            lastRun={p.release_notes.last_run}
+                            onRetry={() => handleRefetchReleaseNotes(p)}
+                          />
                         </button>
                       </Td>
                       <Td mono small>
@@ -281,16 +315,30 @@ export default function Pipeline() {
                           </button>
                         )}
                         {p.release_notes.status !== "published" && (
-                          <button
-                            disabled={p.release_notes.status !== "pending_approval"}
-                            onClick={() => p.release_notes.status === "pending_approval" && openApproval(p, "docs")}
-                            className="px-2.5 py-1 text-xs font-semibold rounded-md inline-flex items-center gap-1 ml-1"
-                            style={p.release_notes.status === "pending_approval"
-                              ? { background: "linear-gradient(135deg,#7c3aed,#6d28d9)", color: "#fff" }
-                              : { backgroundColor: dk.surface, border: `1px solid ${dk.border}`, color: dk.textDim, opacity: 0.6, cursor: "not-allowed" }}
-                          >
-                            Approve Docs
-                          </button>
+                          p.release_notes.status === "not_started" || p.release_notes.status === "not_found" ? (
+                            <button
+                              disabled={p.release_notes.last_run.state === "running"}
+                              onClick={() => handleRefetchReleaseNotes(p)}
+                              className="px-2.5 py-1 text-xs font-semibold rounded-md inline-flex items-center gap-1 ml-1"
+                              style={p.release_notes.last_run.state === "running"
+                                ? { backgroundColor: dk.surface, border: `1px solid ${dk.border}`, color: dk.textDim, opacity: 0.6, cursor: "not-allowed" }
+                                : { background: "linear-gradient(135deg,#7c3aed,#6d28d9)", color: "#fff" }}
+                              title="Fetch release notes from Zendesk"
+                            >
+                              <RefreshCw size={12} /> Refetch Docs
+                            </button>
+                          ) : (
+                            <button
+                              disabled={p.release_notes.status !== "pending_approval"}
+                              onClick={() => p.release_notes.status === "pending_approval" && openApproval(p, "docs")}
+                              className="px-2.5 py-1 text-xs font-semibold rounded-md inline-flex items-center gap-1 ml-1"
+                              style={p.release_notes.status === "pending_approval"
+                                ? { background: "linear-gradient(135deg,#7c3aed,#6d28d9)", color: "#fff" }
+                                : { backgroundColor: dk.surface, border: `1px solid ${dk.border}`, color: dk.textDim, opacity: 0.6, cursor: "not-allowed" }}
+                            >
+                              Approve Docs
+                            </button>
+                          )
                         )}
                       </Td>
                     </tr>
