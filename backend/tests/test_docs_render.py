@@ -35,6 +35,14 @@ from app.state.release_notes_models import (
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _stub_regenerate_fields(monkeypatch):
+    """Unit-level tests shouldn't spin up LibreOffice. The real regen path
+    is covered by test_docs_field_regen.py's integration test."""
+    import app.pipelines.docs.converter as conv
+    monkeypatch.setattr(conv, "regenerate_fields", lambda path: None)
+
+
 @pytest.fixture
 def real_template():
     """The actual Flightscape template that ships with the repo."""

@@ -36,6 +36,7 @@ from app.integrations.claude.extractor import (
     extract_release_note,
 )
 from app.integrations.pdf.image_extractor import extract_images
+from app.pipelines.docs.field_regen import regenerate_fields
 from app.state.models import PatchEntry
 from app.state.release_notes_models import ReleaseNoteItem, ReleaseNoteRecord
 
@@ -242,6 +243,11 @@ def render_release_notes(
         "convert.render.success product=%s version=%s output=%s size=%d",
         product_id, version, output_path, output_path.stat().st_size,
     )
+
+    # Refresh TOC / index caches via Word so downstream consumers
+    # (preview PDF, published PDF, Open-in-Word) don't render stale template
+    # placeholder entries. python-docx has no layout engine; Word does.
+    regenerate_fields(output_path)
 
     cell.status = "converted"
     cell.converted_at = datetime.now(timezone.utc)

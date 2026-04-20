@@ -90,8 +90,8 @@
 ### Docs pipeline progress
 
 - [x] Unit 9: side-by-side review view (2026-04-20) — new `DocsReviewView` modal, `preview.pdf` + `open-in-word` backend endpoints, `exporter.py` module (reused by Unit 10), LibreOffice brew install. 306 backend tests passing. Button-enablement loosened to open the review gate from `converted` state. Surfaced a DOCX defect: Unit 5's `render_release_notes()` leaves a stale TOC field cache → Word auto-regenerates (correct), LibreOffice uses the cached text (stale template entries). Tracked as Unit 11.
+- [x] Unit 11: fix stale TOC cache in `render_release_notes()` (2026-04-20) — drives Microsoft Word via AppleScript (`osascript` + `_regen_fields.applescript`) to rebuild the TOC cache in the DOCX on disk, right after `python-docx` saves. New `backend/app/pipelines/docs/field_regen.py` exposes `regenerate_fields(docx_path)`; integrated into `render_release_notes()` just after `doc.save()`. LibreOffice UNO path was abandoned: Apple's **Launch Constraints** (macOS 13+) SIGKILL `LibreOfficePython` whenever launched by anything but `soffice` itself (`Namespace CODESIGNING, Code 4, Launch Constraint Violation`). LibreOffice `updateFields` settings flag is ignored by `--convert-to pdf`; `--convert-to docx` round-trip mangles the template's TOC. macOS + Word pair works cleanly. ~13s per call end-to-end (Word cold-launch + open + TOC update + save + close). 311 backend tests passing (+5 new from `test_docs_field_regen.py` fast path), 1 new integration test (`TestRegenerateFieldsIntegration`) passes against real Word.
 - [ ] Unit 10: DOCX → PDF on approval + Jira attach
-- [ ] Unit 11 (new): fix stale TOC cache in `render_release_notes()` — blocks Unit 10's final PDF quality
 
 ### Next phase — Docs pipeline
 

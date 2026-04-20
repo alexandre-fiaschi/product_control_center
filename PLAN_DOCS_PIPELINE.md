@@ -738,10 +738,24 @@ So a failed publish attempt leaves the cell at `approved` (workflow status untou
 
 ---
 
-### Unit 11 — Fix stale TOC cache in rendered DOCX
+### Unit 11 — Fix stale TOC cache in rendered DOCX ✅ (2026-04-20)
 
 **Effort:** Small–Medium.
 **Depends on:** unit 5 (render_release_notes). Should land **before** unit 10 so the final approved PDF attached to Jira has a correct TOC, not a stale one.
+
+**As built (2026-04-20).** Neither original candidate was used. After spiking both:
+- **LibreOffice UNO (candidate 2)** is blocked on macOS 13+ by Apple **Launch Constraints**: `LibreOfficePython` SIGKILLs immediately when launched by anything but `soffice` itself (`Namespace CODESIGNING, Code 4`). Not fixable without re-signing the binary.
+- **LibreOffice settings-flag `<w:updateFields w:val="true"/>`** is ignored by `--convert-to pdf`. Confirmed empirically — output PDF is byte-identical to the unmodified case.
+- **LibreOffice `--convert-to docx` round-trip** regenerates fields but mangles the TOC (drops top-level headings).
+- **XML surgery (candidate 1)** was viable but can't compute real page numbers (no layout engine in python-docx).
+
+Landed solution: **drive Microsoft Word via AppleScript.** New [backend/app/pipelines/docs/field_regen.py](backend/app/pipelines/docs/field_regen.py) shells out to `/usr/bin/osascript` against a one-shot [_regen_fields.applescript](backend/app/pipelines/docs/_regen_fields.applescript). The AppleScript opens the DOCX in Word, iterates `every table of contents` of `document 1`, calls `update` on each, saves, closes. Integrated in [render_release_notes()](backend/app/pipelines/docs/converter.py) right after `doc.save()`. `regenerate_fields(docx_path)` is the portability seam — a future Linux build would swap the backend while callers stay unchanged. ~13s per call (Word cold-launch + open + update + save + close). macOS sandbox note: Word prompts once for filesystem access to the patches folder on first encounter, then TCC remembers the grant forever (or grant Full Disk Access to Word to skip prompts entirely).
+
+**Tests.** 5 new fast tests in [test_docs_field_regen.py](backend/tests/test_docs_field_regen.py) (mocked osascript). 1 integration test (`TestRegenerateFieldsIntegration`) drives real Word end-to-end in ~45s, asserts the TOC cached runs match body headings and exclude template placeholders. [test_docs_render.py](backend/tests/test_docs_render.py) got an autouse fixture stubbing `regenerate_fields` so unit tests stay fast. Full suite: 319 passed (up from 306).
+
+---
+
+<details><summary>Original candidate approaches (for history)</summary>
 
 **Scope.** The DOCX that [render_release_notes()](backend/app/pipelines/docs/converter.py) writes contains a `TOC` field copied from the Flightscape template. The body is correctly populated with H1/H2 headings for the new release content ("New Features", "Defect fixes", "Not tested", AM#### items). But the field's cached inline content — the runs between `<w:fldChar w:fldCharType="separate"/>` and `<w:fldChar w:fldCharType="end"/>` — still holds the template's placeholder entries ("Introduction", "Insert your Heading", "Delete This Chapter…"). The field is marked `w:dirty="1"` so Word regenerates on open (visible to reviewers), but LibreOffice ignores `dirty` and renders the stale cache. Result: Unit 9's preview panel shows template boilerplate; Unit 10's to-be-attached PDF would do the same unless fixed. Discovered while smoke-testing Unit 9 against patch 8.0.18.1 on 2026-04-20.
 
@@ -772,6 +786,8 @@ This is a Unit 5 defect — the DOCX on disk is wrong. Fixing in Unit 5 means Un
 - Integration: regenerate `8.0.18.1.docx` end-to-end, open Unit 9's preview, confirm the TOC panel shows "New Features / Defect fixes / Not tested" instead of "Introduction / Insert your Heading / …".
 
 **Done criteria:** Unit 9 preview of any newly-rendered DOCX shows a TOC matching Word's rendering. No regression in Word's own display (Word still regenerates fields on open).
+
+</details>
 
 ---
 
