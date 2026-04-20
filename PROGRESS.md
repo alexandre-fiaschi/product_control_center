@@ -87,6 +87,12 @@
 - [ ] Frontend F6: Testing — full plan saved in `PLAN_FRONTEND_TESTING.md`
 - [ ] Docker setup
 
+### Docs pipeline progress
+
+- [x] Unit 9: side-by-side review view (2026-04-20) — new `DocsReviewView` modal, `preview.pdf` + `open-in-word` backend endpoints, `exporter.py` module (reused by Unit 10), LibreOffice brew install. 306 backend tests passing. Button-enablement loosened to open the review gate from `converted` state. Surfaced a DOCX defect: Unit 5's `render_release_notes()` leaves a stale TOC field cache → Word auto-regenerates (correct), LibreOffice uses the cached text (stale template entries). Tracked as Unit 11.
+- [ ] Unit 10: DOCX → PDF on approval + Jira attach
+- [ ] Unit 11 (new): fix stale TOC cache in `render_release_notes()` — blocks Unit 10's final PDF quality
+
 ### Next phase — Docs pipeline
 
 Full design captured in [`PLAN_DOCS_PIPELINE.md`](PLAN_DOCS_PIPELINE.md). Key decisions:

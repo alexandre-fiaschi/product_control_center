@@ -108,3 +108,10 @@ export function refetchReleaseNotesBulk(version?: string) {
     body: "{}",
   });
 }
+
+export function openDocxInWord(productId: string, patchId: string) {
+  return request<{ opened: boolean; path: string }>(
+    `/patches/${productId}/${patchId}/release-notes/open-in-word`,
+    { method: "POST", body: "{}" },
+  );
+}

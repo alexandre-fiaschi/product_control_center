@@ -1,6 +1,7 @@
 """Patch list, detail, and approval endpoints."""
 
 import logging
+import subprocess
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 
 from app.config import settings
+from app.pipelines.docs.exporter import export_docx_to_pdf
 from app.services.orchestrator import refetch_release_notes
 from app.services.patch_service import (
     PatchNotFoundError,
@@ -239,6 +241,7 @@ def get_release_notes_source_pdf(product_id: str, patch_id: str) -> FileResponse
         path,
         media_type="application/pdf",
         filename=f"{patch_id}-release-notes.pdf",
+        content_disposition_type="inline",
     )
 
 
@@ -262,6 +265,59 @@ def get_release_notes_draft_docx(product_id: str, patch_id: str) -> FileResponse
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         filename=f"{patch_id}-release-notes.docx",
     )
+
+
+@router.get("/patches/{product_id}/{patch_id}/release-notes/preview.pdf")
+def get_release_notes_preview_pdf(product_id: str, patch_id: str) -> FileResponse:
+    try:
+        _tracker, _version_key, patch = find_patch(product_id, patch_id)
+    except PatchNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    path_str = patch.release_notes.generated_docx_path
+    if not path_str:
+        raise HTTPException(status_code=404, detail="Generated DOCX not available for this patch")
+
+    docx_path = Path(path_str)
+    if not docx_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found on disk")
+
+    out_dir = settings.docs_preview_cache_dir / product_id
+    try:
+        pdf_path = export_docx_to_pdf(docx_path, out_dir=out_dir)
+    except FileNotFoundError as exc:
+        logger.error("preview.pdf: libreoffice unavailable: %s", exc)
+        raise HTTPException(status_code=503, detail=str(exc))
+    except RuntimeError as exc:
+        logger.error("preview.pdf: conversion failed for %s: %s", docx_path, exc)
+        raise HTTPException(status_code=500, detail="DOCX → PDF conversion failed")
+
+    return FileResponse(
+        pdf_path,
+        media_type="application/pdf",
+        filename=f"{patch_id}-release-notes-preview.pdf",
+        content_disposition_type="inline",
+    )
+
+
+@router.post("/patches/{product_id}/{patch_id}/release-notes/open-in-word")
+def open_release_notes_docx_in_word(product_id: str, patch_id: str) -> dict[str, Any]:
+    try:
+        _tracker, _version_key, patch = find_patch(product_id, patch_id)
+    except PatchNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    path_str = patch.release_notes.generated_docx_path
+    if not path_str:
+        raise HTTPException(status_code=404, detail="Generated DOCX not available for this patch")
+
+    path = Path(path_str)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="File not found on disk")
+
+    subprocess.run(["open", str(path)], check=False)
+    logger.info("open-in-word: launched %s", path)
+    return {"opened": True, "path": str(path)}
 
 
 @router.post("/patches/{product_id}/{patch_id}/docs/approve")

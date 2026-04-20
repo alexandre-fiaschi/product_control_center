@@ -390,19 +390,24 @@ function PatchDetailModal({ patch, productName, onClose, onApprove }: PatchDetai
 
                 <LastRunSection lastRun={detail.release_notes.last_run} />
 
-                {patch.release_notes.status !== "published" && (
-                  <button
-                    disabled={patch.release_notes.status !== "pending_approval"}
-                    className="mt-6 w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-opacity"
-                    style={patch.release_notes.status === "pending_approval"
-                      ? { background: "linear-gradient(135deg, #a78bfa, #7c3aed)", color: "#fff" }
-                      : { backgroundColor: dk.surface, border: `1px solid ${dk.border}`, color: dk.textDim, opacity: 0.6, cursor: "not-allowed" }}
-                    onClick={() => patch.release_notes.status === "pending_approval" && onApprove(patch, "docs")}
-                  >
-                    <Check size={14} />
-                    Approve Release Notes
-                  </button>
-                )}
+                {patch.release_notes.status !== "published" && (() => {
+                  const reviewable =
+                    patch.release_notes.status === "converted" ||
+                    patch.release_notes.status === "pending_approval";
+                  return (
+                    <button
+                      disabled={!reviewable}
+                      className="mt-6 w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-opacity"
+                      style={reviewable
+                        ? { background: "linear-gradient(135deg, #a78bfa, #7c3aed)", color: "#fff" }
+                        : { backgroundColor: dk.surface, border: `1px solid ${dk.border}`, color: dk.textDim, opacity: 0.6, cursor: "not-allowed" }}
+                      onClick={() => reviewable && onApprove(patch, "docs")}
+                    >
+                      <Check size={14} />
+                      Review & Approve Release Notes
+                    </button>
+                  );
+                })()}
               </div>
             </div>
           </>

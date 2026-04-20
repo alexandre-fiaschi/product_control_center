@@ -11,6 +11,7 @@ import Th from "../components/shared/Th";
 import Td from "../components/shared/Td";
 import PatchDetailModal from "../components/patches/PatchDetailModal";
 import JiraApprovalModal from "../components/patches/JiraApprovalModal";
+import DocsReviewView from "../components/patches/DocsReviewView";
 
 function getLocalPath(productId: string, patchId: string): string {
   return `patches/${productId}/${patchId}`;
@@ -30,6 +31,7 @@ export default function Pipeline() {
     patch: PatchSummary;
     pipelineType: "binaries" | "docs";
   } | null>(null);
+  const [reviewView, setReviewView] = useState<{ patch: PatchSummary } | null>(null);
 
   const { data: patchList, isLoading: patchesLoading } = useQuery({
     queryKey: ["patches"],
@@ -102,11 +104,16 @@ export default function Pipeline() {
     [patchList],
   );
 
-  // Open Jira approval modal (from table button or from detail modal)
+  // Open Jira approval modal (from table button or from detail modal).
+  // Docs path gates through the review view first.
   const openApproval = useCallback(
     (patch: PatchSummary, pipelineType: "binaries" | "docs") => {
       setDetailPatch(null); // close detail if open
-      setApprovalModal({ patch, pipelineType });
+      if (pipelineType === "docs") {
+        setReviewView({ patch });
+      } else {
+        setApprovalModal({ patch, pipelineType });
+      }
     },
     [],
   );
@@ -345,21 +352,28 @@ export default function Pipeline() {
                               <RefreshCw size={12} /> Refetch Docs
                             </button>
                           ) : (
-                            <button
-                              disabled={p.release_notes.status !== "pending_approval"}
-                              onClick={() => p.release_notes.status === "pending_approval" && openApproval(p, "docs")}
-                              className="px-2.5 py-1 text-xs font-semibold rounded-md inline-flex items-center gap-1 ml-1"
-                              style={p.release_notes.status === "pending_approval"
-                                ? { background: "linear-gradient(135deg,#7c3aed,#6d28d9)", color: "#fff" }
-                                : { backgroundColor: dk.surface, border: `1px solid ${dk.border}`, color: dk.textDim, opacity: 0.6, cursor: "not-allowed" }}
-                              title={
-                                p.release_notes.status === "pending_approval"
-                                  ? `Approve release notes for patch ${p.patch_id}.\nOpens the Jira approval form; on submit, a CFSSOCP ticket is created with the exported PDF attached and the release notes are marked Published on the CAE portal.`
-                                  : `Approve Docs is disabled — current status: "${p.release_notes.status}".\nOnly release notes in "Pending Approval" can be approved. Earlier pipeline steps (download, extract, convert) must complete first.`
-                              }
-                            >
-                              Approve Docs
-                            </button>
+                            (() => {
+                              const reviewable =
+                                p.release_notes.status === "converted" ||
+                                p.release_notes.status === "pending_approval";
+                              return (
+                                <button
+                                  disabled={!reviewable}
+                                  onClick={() => reviewable && openApproval(p, "docs")}
+                                  className="px-2.5 py-1 text-xs font-semibold rounded-md inline-flex items-center gap-1 ml-1"
+                                  style={reviewable
+                                    ? { background: "linear-gradient(135deg,#7c3aed,#6d28d9)", color: "#fff" }
+                                    : { backgroundColor: dk.surface, border: `1px solid ${dk.border}`, color: dk.textDim, opacity: 0.6, cursor: "not-allowed" }}
+                                  title={
+                                    reviewable
+                                      ? `Review release notes for patch ${p.patch_id}.\nOpens the side-by-side review (source PDF + rendered DOCX preview). From there, open in Word to tweak, then continue to the Jira approval form.`
+                                      : `Approve Docs is disabled — current status: "${p.release_notes.status}".\nReview becomes available once the DOCX has been rendered (status "converted"). Earlier pipeline steps (download, extract, convert) must complete first.`
+                                  }
+                                >
+                                  Approve Docs
+                                </button>
+                              );
+                            })()
                           )
                         )}
                       </Td>
@@ -472,6 +486,19 @@ export default function Pipeline() {
           isNewFolder={isNewFolder(approvalModal.patch)}
           onClose={() => setApprovalModal(null)}
           onSuccess={handleApproveSuccess}
+        />
+      )}
+
+      {reviewView && (
+        <DocsReviewView
+          patch={reviewView.patch}
+          productName={productNames.get(reviewView.patch.product_id) ?? reviewView.patch.product_id}
+          onClose={() => setReviewView(null)}
+          onContinue={() => {
+            const p = reviewView.patch;
+            setReviewView(null);
+            setApprovalModal({ patch: p, pipelineType: "docs" });
+          }}
         />
       )}
     </div>

@@ -413,3 +413,145 @@ class TestGetDraftDocx:
             "/api/patches/ACARS_V8_1/NOPE/release-notes/draft.docx"
         )
         assert resp.status_code == 404
+
+
+class TestGetPreviewPdf:
+    @patch("app.api.patches.export_docx_to_pdf")
+    @patch("app.api.patches.find_patch")
+    def test_returns_pdf_file(self, mock_find, mock_export, client, tmp_path):
+        docx_path = tmp_path / "8.1.0.0.docx"
+        docx_path.write_bytes(b"PK\x03\x04 fake docx")
+        pdf_path = tmp_path / "8.1.0.0.pdf"
+        pdf_bytes = b"%PDF-1.4 fake converted pdf"
+        pdf_path.write_bytes(pdf_bytes)
+        mock_export.return_value = pdf_path
+
+        tracker, patch_entry = _tracker_with_release_notes(
+            generated_docx_path=str(docx_path)
+        )
+        mock_find.return_value = (tracker, "8.1.0", patch_entry)
+
+        resp = client.get(
+            "/api/patches/ACARS_V8_1/8.1.0.0/release-notes/preview.pdf"
+        )
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "application/pdf"
+        assert resp.content == pdf_bytes
+
+    @patch("app.api.patches.find_patch")
+    def test_404_when_docx_path_is_none(self, mock_find, client):
+        tracker, patch_entry = _tracker_with_release_notes(
+            generated_docx_path=None
+        )
+        mock_find.return_value = (tracker, "8.1.0", patch_entry)
+
+        resp = client.get(
+            "/api/patches/ACARS_V8_1/8.1.0.0/release-notes/preview.pdf"
+        )
+        assert resp.status_code == 404
+
+    @patch("app.api.patches.find_patch")
+    def test_404_when_docx_missing_on_disk(self, mock_find, client, tmp_path):
+        missing = tmp_path / "does-not-exist.docx"
+        tracker, patch_entry = _tracker_with_release_notes(
+            generated_docx_path=str(missing)
+        )
+        mock_find.return_value = (tracker, "8.1.0", patch_entry)
+
+        resp = client.get(
+            "/api/patches/ACARS_V8_1/8.1.0.0/release-notes/preview.pdf"
+        )
+        assert resp.status_code == 404
+
+    @patch("app.api.patches.export_docx_to_pdf")
+    @patch("app.api.patches.find_patch")
+    def test_503_when_soffice_missing(self, mock_find, mock_export, client, tmp_path):
+        docx_path = tmp_path / "8.1.0.0.docx"
+        docx_path.write_bytes(b"PK\x03\x04")
+        mock_export.side_effect = FileNotFoundError("soffice missing")
+
+        tracker, patch_entry = _tracker_with_release_notes(
+            generated_docx_path=str(docx_path)
+        )
+        mock_find.return_value = (tracker, "8.1.0", patch_entry)
+
+        resp = client.get(
+            "/api/patches/ACARS_V8_1/8.1.0.0/release-notes/preview.pdf"
+        )
+        assert resp.status_code == 503
+
+    @patch("app.api.patches.export_docx_to_pdf")
+    @patch("app.api.patches.find_patch")
+    def test_500_when_conversion_fails(self, mock_find, mock_export, client, tmp_path):
+        docx_path = tmp_path / "8.1.0.0.docx"
+        docx_path.write_bytes(b"PK\x03\x04")
+        mock_export.side_effect = RuntimeError("soffice exited 1: boom")
+
+        tracker, patch_entry = _tracker_with_release_notes(
+            generated_docx_path=str(docx_path)
+        )
+        mock_find.return_value = (tracker, "8.1.0", patch_entry)
+
+        resp = client.get(
+            "/api/patches/ACARS_V8_1/8.1.0.0/release-notes/preview.pdf"
+        )
+        assert resp.status_code == 500
+
+    @patch("app.api.patches.find_patch")
+    def test_404_when_patch_not_found(self, mock_find, client):
+        mock_find.side_effect = PatchNotFoundError("not found")
+        resp = client.get(
+            "/api/patches/ACARS_V8_1/NOPE/release-notes/preview.pdf"
+        )
+        assert resp.status_code == 404
+
+
+class TestOpenDocxInWord:
+    @patch("app.api.patches.subprocess.run")
+    @patch("app.api.patches.find_patch")
+    def test_opens_docx(self, mock_find, mock_run, client, tmp_path):
+        docx_path = tmp_path / "8.1.0.0.docx"
+        docx_path.write_bytes(b"PK\x03\x04")
+
+        tracker, patch_entry = _tracker_with_release_notes(
+            generated_docx_path=str(docx_path)
+        )
+        mock_find.return_value = (tracker, "8.1.0", patch_entry)
+
+        resp = client.post(
+            "/api/patches/ACARS_V8_1/8.1.0.0/release-notes/open-in-word"
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["opened"] is True
+        assert body["path"] == str(docx_path)
+        mock_run.assert_called_once_with(["open", str(docx_path)], check=False)
+
+    @patch("app.api.patches.find_patch")
+    def test_404_when_path_is_none(self, mock_find, client):
+        tracker, patch_entry = _tracker_with_release_notes(generated_docx_path=None)
+        mock_find.return_value = (tracker, "8.1.0", patch_entry)
+
+        resp = client.post(
+            "/api/patches/ACARS_V8_1/8.1.0.0/release-notes/open-in-word"
+        )
+        assert resp.status_code == 404
+
+    @patch("app.api.patches.find_patch")
+    def test_404_when_file_missing(self, mock_find, client, tmp_path):
+        missing = tmp_path / "nope.docx"
+        tracker, patch_entry = _tracker_with_release_notes(generated_docx_path=str(missing))
+        mock_find.return_value = (tracker, "8.1.0", patch_entry)
+
+        resp = client.post(
+            "/api/patches/ACARS_V8_1/8.1.0.0/release-notes/open-in-word"
+        )
+        assert resp.status_code == 404
+
+    @patch("app.api.patches.find_patch")
+    def test_404_when_patch_not_found(self, mock_find, client):
+        mock_find.side_effect = PatchNotFoundError("not found")
+        resp = client.post(
+            "/api/patches/ACARS_V8_1/NOPE/release-notes/open-in-word"
+        )
+        assert resp.status_code == 404

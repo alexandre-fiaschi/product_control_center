@@ -652,7 +652,7 @@ Unit 4 (Block B prototype) is the only one that runs **in parallel** with the re
 
 ---
 
-### Unit 9 — UI: side-by-side review view
+### Unit 9 — UI: side-by-side review view ✅ DONE (2026-04-20)
 
 **Effort:** Medium.
 **Depends on:** units 7 + 8.
@@ -690,6 +690,20 @@ The review view itself does **not** advance workflow status — `converted → a
 
 **Done criteria:** end-to-end docs review workflow works against real Zendesk-fetched release notes.
 
+**As built (2026-04-20):**
+- New [backend/app/pipelines/docs/exporter.py](backend/app/pipelines/docs/exporter.py) — `export_docx_to_pdf(docx_path, out_dir=None) -> Path`, shells out to `soffice --headless --convert-to pdf`, caches by mtime, idempotent. `_resolve_soffice()` checks `LIBREOFFICE_BIN` env → `shutil.which("soffice")` → `/Applications/LibreOffice.app/Contents/MacOS/soffice`. Will be reused by Unit 10.
+- New endpoint in [backend/app/api/patches.py](backend/app/api/patches.py): `GET /patches/{p}/{v}/release-notes/preview.pdf` — converts via `export_docx_to_pdf`, cache at `state/cache/pdf/{product_id}/{version}.pdf`. 503 if `soffice` missing; 500 on conversion failure; 404 if DOCX missing.
+- New endpoint: `POST /patches/{p}/{v}/release-notes/open-in-word` — runs `subprocess.run(["open", path])` so macOS launches the canonical DOCX in Word. Chose `open-in-word` over `reveal` because macOS "reveal" means show-in-Finder (wrong action). `file://` links rejected (browsers block them); `ms-word:ofe|u|` rejected (opens a temp copy, edits don't persist).
+- [backend/app/config.py](backend/app/config.py) — added `LIBREOFFICE_BIN` env field and `docs_preview_cache_dir` property. Dev-machine setup: `brew install --cask libreoffice` (done).
+- New [frontend/src/components/patches/DocsReviewView.tsx](frontend/src/components/patches/DocsReviewView.tsx) — full-bleed modal (not a route), two `<iframe>` panels, header has "Open in Word" button left of close-X, footer has Cancel + Continue. Per-mount cache-bust via `?v=${Date.now()}` on iframe srcs so Chrome doesn't reuse a cached `Content-Disposition: attachment` decision.
+- Modified [frontend/src/views/Pipeline.tsx](frontend/src/views/Pipeline.tsx) — `openApproval` routes docs through a new `reviewView` state; continue callback closes review and opens `JiraApprovalModal` with `pipelineType: "docs"`. Binaries path untouched. Button-enablement loosened from `pending_approval` to `converted | pending_approval` so Unit 9's review gate is actually reachable (otherwise nothing could open it — `converted` is the natural state where the DOCX exists). Same loosening applied to [frontend/src/components/patches/PatchDetailModal.tsx](frontend/src/components/patches/PatchDetailModal.tsx); detail-modal button relabeled to "Review & Approve Release Notes".
+- [frontend/src/lib/api.ts](frontend/src/lib/api.ts) — added `openDocxInWord(productId, patchId)` helper. Preview PDFs are consumed as raw URLs by the iframe — no typed fetch helper needed.
+- Both `source.pdf` and `preview.pdf` responses set `content_disposition_type="inline"` so they render in the iframe instead of triggering a download.
+
+**Tests:** 22 new backend tests (`TestGetPreviewPdf` × 6, `TestOpenDocxInWord` × 4, `test_docs_exporter.py` × 12). Full suite: 306 passed, 6 skipped, 11 deselected. Frontend `tsc -b && vite build` clean.
+
+**Known issue discovered during smoke: stale TOC cache in DOCX → LibreOffice preview shows template boilerplate.** The DOCX that Unit 5 writes contains a `TOC` field with `dirty="1"` set (telling viewers to regenerate on open). Word honors `dirty` and regenerates the TOC from current body headings — shows real release-notes headings correctly. LibreOffice ignores `dirty` and renders the field's cached text, which still contains template placeholder entries ("Introduction", "Insert your Heading", "Delete This Chapter…") from the source template. Verified by: (a) grepping `w:dirty="1"` in the DOCX's `document.xml`, (b) comparing body `<w:pStyle w:val="Heading1|2">` paragraph text (all real release-notes content) against the cached TOC text runs (all template). Unit 9's preview is faithfully rendering what LibreOffice produces; the stale cache itself is the defect. Preview still shows the rest of the DOCX (body sections, formatting, images) accurately — only fields like TOC are stale. **Fix is Unit 11.**
+
 ---
 
 ### Unit 10 — DOCX → PDF on approval, attached to Jira docs ticket
@@ -721,6 +735,43 @@ So a failed publish attempt leaves the cell at `approved` (workflow status untou
 - Partial-failure retry: Jira attach fails on first attempt → cell stays at `approved` (workflow status untouched by the publish work function), `last_run.state=failed`. Second attempt reuses the already-exported PDF (local file exists) and the already-created Jira ticket key (persisted on the cell) and re-tries just the attach.
 
 **Done criteria:** at least one real docs ticket created in dev with a converted PDF attachment, and the cell's final state is `published`.
+
+---
+
+### Unit 11 — Fix stale TOC cache in rendered DOCX
+
+**Effort:** Small–Medium.
+**Depends on:** unit 5 (render_release_notes). Should land **before** unit 10 so the final approved PDF attached to Jira has a correct TOC, not a stale one.
+
+**Scope.** The DOCX that [render_release_notes()](backend/app/pipelines/docs/converter.py) writes contains a `TOC` field copied from the Flightscape template. The body is correctly populated with H1/H2 headings for the new release content ("New Features", "Defect fixes", "Not tested", AM#### items). But the field's cached inline content — the runs between `<w:fldChar w:fldCharType="separate"/>` and `<w:fldChar w:fldCharType="end"/>` — still holds the template's placeholder entries ("Introduction", "Insert your Heading", "Delete This Chapter…"). The field is marked `w:dirty="1"` so Word regenerates on open (visible to reviewers), but LibreOffice ignores `dirty` and renders the stale cache. Result: Unit 9's preview panel shows template boilerplate; Unit 10's to-be-attached PDF would do the same unless fixed. Discovered while smoke-testing Unit 9 against patch 8.0.18.1 on 2026-04-20.
+
+This is a Unit 5 defect — the DOCX on disk is wrong. Fixing in Unit 5 means Unit 9 preview and Unit 10 publish PDF both get correct output automatically.
+
+**Two candidate approaches.** Pick one after a short spike:
+
+1. **XML surgery in [render_release_notes()](backend/app/pipelines/docs/converter.py).** After the body is populated, walk the document and for each TOC field:
+   - Collect the current H1-H5 paragraph texts + their assigned page numbers.
+   - Replace the runs between `separate` and `end` `fldChar` elements with freshly-generated hyperlinked entries.
+   - Keep `w:dirty="1"` so Word still regenerates (defensive).
+
+   Pros: no new runtime dependencies; DOCX on disk is self-contained and correct for any viewer. Cons: page numbers are tricky — we don't know real page breaks until a renderer lays the doc out. One workable shortcut: leave the page numbers blank or `…` in the cache; since Word regenerates on open and LibreOffice renders the cache, a blank-page-number cache is acceptable for LibreOffice preview (shows the right headings, just no page refs). Humans reading the preview care about heading structure, not page numbers.
+
+2. **Pre-convert update via python-uno.** In [export_docx_to_pdf()](backend/app/pipelines/docs/exporter.py), instead of `soffice --convert-to pdf`, run a small python-uno helper (under LibreOffice's bundled Python at `/Applications/LibreOffice.app/Contents/Resources/python`) that connects to a headless soffice listener, loads the DOCX, calls `doc.DocumentIndexes.getByIndex(i).update()` for each index, then exports to PDF.
+
+   Pros: works on any DOCX with stale fields, not just TOCs we emit. Cons: adds soffice listener startup (~1s per first call), more moving parts, and the DOCX on disk stays stale — so `draft.docx` download and Word open still get the stale cache until Word does its on-open regen.
+
+**Recommendation: option 1 (fix at render time).** Keeps the on-disk DOCX correct and doesn't add a conversion-time dependency beyond what we already shipped in Unit 9. If page numbers turn out to be impossible without a layout pass, fall back to blank page numbers in the cache — still displays correct heading structure in LibreOffice preview, and Word users get real page numbers via the on-open regeneration. Unit 10's approved PDF is generated by LibreOffice too (same stale-cache problem), so we'd also add a `dirty="1"` check or just trust that option 1 produced a correct cache.
+
+**Files:**
+- [backend/app/pipelines/docs/converter.py](backend/app/pipelines/docs/converter.py) — add a `_regenerate_toc_cache(doc)` helper called after body population; rewrite runs between `separate` and `end` `fldChar` for each TOC field.
+- `backend/tests/test_docs_converter.py` (extend) — fixture DOCX with a stale TOC cache + real body headings; assert the post-render DOCX's cached TOC entries match the body headings.
+- `backend/tests/fixtures/docx/…` — minimal template DOCX with a TOC field for testing.
+
+**Tests.**
+- Unit: given a DOCX with stale TOC cache and body headings `["New Features", "Defect fixes"]`, after `render_release_notes()` the cached TOC text runs contain exactly those heading labels (and not the template placeholders).
+- Integration: regenerate `8.0.18.1.docx` end-to-end, open Unit 9's preview, confirm the TOC panel shows "New Features / Defect fixes / Not tested" instead of "Introduction / Insert your Heading / …".
+
+**Done criteria:** Unit 9 preview of any newly-rendered DOCX shows a TOC matching Word's rendering. No regression in Word's own display (Word still regenerates fields on open).
 
 ---
 

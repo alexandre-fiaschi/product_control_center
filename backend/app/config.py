@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     ZENDESK_EMAIL: str = ""
     ZENDESK_PASSWORD: str = ""
 
+    # LibreOffice binary override (see backend/app/pipelines/docs/exporter.py)
+    LIBREOFFICE_BIN: str = ""
+
     # Loaded from pipeline.json
     pipeline_config: dict[str, Any] = {}
 
@@ -71,6 +74,10 @@ class Settings(BaseSettings):
     @property
     def docs_cache_dir(self) -> Path:
         return PROJECT_ROOT / "state" / "cache" / "claude"
+
+    @property
+    def docs_preview_cache_dir(self) -> Path:
+        return PROJECT_ROOT / "state" / "cache" / "pdf"
 
     @property
     def scans_dir(self) -> Path:
